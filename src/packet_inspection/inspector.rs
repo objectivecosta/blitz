@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use pnet::datalink::{self, NetworkInterface};
 use pnet::datalink::Channel::Ethernet;
 use pnet::packet::{Packet, MutablePacket};
@@ -14,11 +15,12 @@ pub struct InspectorImpl {
 
 }
 
-pub impl InspectorImpl {
+impl InspectorImpl {
   
 }
 
-pub impl Inspector for InspectorImpl {
+#[async_trait]
+impl Inspector for InspectorImpl {
   async fn start_inspecting(&self) {
     let interface_name = env::args().nth(1).unwrap();
     let interface_names_match =
