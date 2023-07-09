@@ -6,4 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-arp-spoofer = "1.0.0"
+pnt = "0.33.0"
+async-trait = "0.1.68"
+serde_json = "1.0.97"
+enum_primitive = "*"
+tokio = { version = "1", features = ["full"] }
