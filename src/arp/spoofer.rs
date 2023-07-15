@@ -17,8 +17,8 @@ pub struct ArpSpooferImpl {
     mitm: Mitm,
     gateway: Ipv4Addr,
 
-    sender: Option<Box<dyn DataLinkSender>>,
-    receiver: Option<Box<dyn DataLinkReceiver>>
+    sender: Option<Arc<dyn DataLinkSender>>,
+    receiver: Option<Mutex<Arc<dyn DataLinkReceiver>>>
 }
 
 impl ArpSpooferImpl {
@@ -27,7 +27,7 @@ impl ArpSpooferImpl {
         mitm: Mitm, 
         gateway: Ipv4Addr
     ) -> Self {
-        let mut result = Self {
+        let mut spoofer = Self {
             interface: interface,
             mitm: mitm,
             gateway: gateway,
@@ -35,9 +35,10 @@ impl ArpSpooferImpl {
             receiver: None
         };
 
-        result.setup_socket();
+        spoofer.setup_socket();
+        spoofer.log_traffic();
 
-        return result;
+        return spoofer;
     }
 
     fn setup_socket(&mut self) {
@@ -47,8 +48,26 @@ impl ArpSpooferImpl {
             Err(e) => panic!("An error occurred when creating the datalink channel: {}", e)
         };
 
-        self.sender = Some(tx);
-        self.receiver = Some(rx);
+        // let abc = rx as Box<dyn DataLinkReceiver + Send>;
+
+        self.sender = Some(Arc::from(tx));
+        self.receiver = Some(Mutex::new(Arc::from(rx)));
+    }
+
+    fn log_traffic(&mut self) {
+        tokio::task::spawn_blocking(move || {
+            let receiver = self.receiver.unwrap().lock().unwrap();
+            loop {
+                match receiver.next() {
+                    Ok(something) => {
+
+                    },
+                    Err(err) => {
+                        
+                    }
+                }
+            }
+        });
     }
 }
 
