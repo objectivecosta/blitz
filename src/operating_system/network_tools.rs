@@ -1,7 +1,11 @@
+use nix::{sys::socket::{SockAddr, SockaddrStorage}, net::if_::Interface};
+use pnet::{util::MacAddr, datalink::NetworkInterface};
+
 pub trait NetworkTools {
     fn debug_iterate(&self);
-    fn fetch_hardware_address(&self, interface_name: &str) -> String;
-    fn fetch_ipv4_address(&self, interface_name: &str) -> String;
+    fn fetch_interface(&self, interface_name: &str) -> NetworkInterface;
+    fn fetch_hardware_address(&self, interface_name: &str) -> Option<MacAddr>;
+    fn fetch_ipv4_address(&self, interface_name: &str) -> Option<std::net::Ipv4Addr>;
     fn fetch_ipv6_address(&self, interface_name: &str) -> Option<String>;
 }
 
@@ -14,7 +18,18 @@ impl NetworkToolsImpl {
 }
 
 impl NetworkTools for NetworkToolsImpl {
-    fn fetch_ipv4_address(&self, interface_name: &str) -> String {
+    fn fetch_interface(&self, interface_name: &str) -> NetworkInterface {
+        let all_interfaces = pnet::datalink::interfaces();
+        // let addrs = nix::ifaddrs::getifaddrs().unwrap();
+        for interface in all_interfaces {
+            if interface.name == interface_name {
+                return interface;
+            }
+        }
+
+        panic!("Never supposed to happen!");
+    }
+    fn fetch_ipv4_address(&self, interface_name: &str) -> Option<std::net::Ipv4Addr> {
         let addrs = nix::ifaddrs::getifaddrs().unwrap();
         for ifaddr in addrs {
             // Right interface...
@@ -25,14 +40,15 @@ impl NetworkTools for NetworkToolsImpl {
 
                     // Contains hw address
                     if address.as_sockaddr_in().is_some() {
-                        let as_string = address.to_string();
-                        return as_string;
+                      return Some(
+                        std::net::Ipv4Addr::from(address.as_sockaddr_in().unwrap().ip().to_be_bytes())
+                      );
                     }
                 }
             }
         }
 
-        return "none".to_owned();
+        return None;
     }
     fn fetch_ipv6_address(&self, interface_name: &str) -> Option<String> {
         let addrs = nix::ifaddrs::getifaddrs().unwrap();
@@ -55,7 +71,7 @@ impl NetworkTools for NetworkToolsImpl {
         return None;
     }
     
-    fn fetch_hardware_address(&self, interface_name: &str) -> String {
+    fn fetch_hardware_address(&self, interface_name: &str) -> Option<MacAddr> {
         let addrs = nix::ifaddrs::getifaddrs().unwrap();
         for ifaddr in addrs {
             // Right interface...
@@ -66,14 +82,17 @@ impl NetworkTools for NetworkToolsImpl {
 
                     // Contains hw address
                     if address.as_link_addr().is_some() {
-                        let as_string = address.to_string();
-                        return as_string;
+                      let link_addr = address.as_link_addr();
+
+                      // TODO: (@objectivecosta) remove unwraps!
+                      let mac_addr = MacAddr::from(link_addr.unwrap().addr().unwrap());
+                      return Some(mac_addr);
                     }
                 }
             }
         }
 
-        return "none".to_owned();
+        return None
     }
 
     fn debug_iterate(&self) {

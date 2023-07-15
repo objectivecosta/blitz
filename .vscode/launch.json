@@ -25,6 +25,25 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "Debug executable 'blitz' as SU",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=blitz",
+          "--package=blitz"
+        ],
+        "filter": {
+          "name": "blitz",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "asRoot": true,
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "Debug unit tests in executable 'blitz'",
       "cargo": {
         "args": [
