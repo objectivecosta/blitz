@@ -1,40 +1,40 @@
 use async_trait::async_trait;
-use pnet::datalink::{self, NetworkInterface};
+use pnet::datalink::{self, NetworkInterface, DataLinkReceiver};
 use pnet::datalink::Channel::Ethernet;
 use pnet::packet::{Packet, MutablePacket};
 use pnet::packet::ethernet::{EthernetPacket, MutableEthernetPacket};
+use tokio::sync::Mutex;
 
 use std::env;
+use std::sync::Arc;
 
 #[async_trait]
 pub trait Inspector {
-  async fn start_inspecting(&self);
+  async fn start_inspecting(&mut self);
 }
 
 pub struct InspectorImpl {
-
+    interface: Box<NetworkInterface>,
+    // receiver: Arc<Mutex<Box<dyn DataLinkReceiver>>>,
 }
 
 impl InspectorImpl {
-  
+  pub fn new(
+    interface: Box<NetworkInterface>,
+    // receiver: Box<dyn DataLinkReceiver>
+) -> Self {
+    Self {
+        interface: interface //,
+        // receiver: Arc::from(Mutex::new(receiver))
+    }
+  }
 }
 
 #[async_trait]
 impl Inspector for InspectorImpl {
-  async fn start_inspecting(&self) {
-    let interface_name = env::args().nth(1).unwrap();
-    let interface_names_match =
-        |iface: &NetworkInterface| iface.name == interface_name;
-
-    // Find the network interface with the provided name
-    let interfaces = datalink::interfaces();
-    let interface = interfaces.into_iter()
-                              .filter(interface_names_match)
-                              .next()
-                              .unwrap();
-
+  async fn start_inspecting(&mut self) {
     // Create a new channel, dealing with layer 2 packets
-    let (mut tx, mut rx) = match datalink::channel(&interface, Default::default()) {
+    let (_, mut rx) = match datalink::channel(&self.interface, Default::default()) {
         Ok(Ethernet(tx, rx)) => (tx, rx),
         Ok(_) => panic!("Unhandled channel type"),
         Err(e) => panic!("An error occurred when creating the datalink channel: {}", e)
@@ -44,24 +44,7 @@ impl Inspector for InspectorImpl {
         match rx.next() {
             Ok(packet) => {
                 let packet = EthernetPacket::new(packet).unwrap();
-
-                // Constructs a single packet, the same length as the the one received,
-                // using the provided closure. This allows the packet to be constructed
-                // directly in the write buffer, without copying. If copying is not a
-                // problem, you could also use send_to.
-                //
-                // The packet is sent once the closure has finished executing.
-                tx.build_and_send(1, packet.packet().len(),
-                    &mut |mut new_packet| {
-                        let mut new_packet = MutableEthernetPacket::new(new_packet).unwrap();
-
-                        // Create a clone of the original packet
-                        new_packet.clone_from(&packet);
-
-                        // Switch the source and destination
-                        new_packet.set_source(packet.get_destination());
-                        new_packet.set_destination(packet.get_source());
-                });
+                println!("Received new Ethernet packet of size: {}", packet.packet().len())
             },
             Err(e) => {
                 // If an error occurs, we can handle it here
