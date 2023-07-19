@@ -12,19 +12,22 @@ pub trait Inspector {
 }
 
 pub struct InspectorImpl {
-
+    interface: NetworkInterface
 }
 
 impl InspectorImpl {
-  
+  pub fn new(interface: &NetworkInterface) -> Self {
+    Self {
+        interface: interface.to_owned()
+    }
+  }
 }
 
 #[async_trait]
 impl Inspector for InspectorImpl {
   async fn start_inspecting(&self) {
-    let interface_name = env::args().nth(1).unwrap();
     let interface_names_match =
-        |iface: &NetworkInterface| iface.name == interface_name;
+        |iface: &NetworkInterface| iface == &self.interface;
 
     // Find the network interface with the provided name
     let interfaces = datalink::interfaces();
@@ -44,24 +47,10 @@ impl Inspector for InspectorImpl {
         match rx.next() {
             Ok(packet) => {
                 let packet = EthernetPacket::new(packet).unwrap();
-
-                // Constructs a single packet, the same length as the the one received,
-                // using the provided closure. This allows the packet to be constructed
-                // directly in the write buffer, without copying. If copying is not a
-                // problem, you could also use send_to.
-                //
-                // The packet is sent once the closure has finished executing.
-                tx.build_and_send(1, packet.packet().len(),
-                    &mut |mut new_packet| {
-                        let mut new_packet = MutableEthernetPacket::new(new_packet).unwrap();
-
-                        // Create a clone of the original packet
-                        new_packet.clone_from(&packet);
-
-                        // Switch the source and destination
-                        new_packet.set_source(packet.get_destination());
-                        new_packet.set_destination(packet.get_source());
-                });
+                let src = packet.get_source().to_string();
+                let tgt = packet.get_destination().to_string();
+                let packet_type = packet.get_ethertype().to_string();
+                println!("Received new Ethernet packet src='{}';target='{}';type='{}'", src, tgt, packet_type);
             },
             Err(e) => {
                 // If an error occurs, we can handle it here
