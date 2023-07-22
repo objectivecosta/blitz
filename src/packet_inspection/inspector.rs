@@ -1,10 +1,15 @@
 use async_trait::async_trait;
 use pnet::datalink::{self, NetworkInterface};
 use pnet::datalink::Channel::Ethernet;
+use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::{Packet, MutablePacket};
-use pnet::packet::ethernet::{EthernetPacket, MutableEthernetPacket};
+use pnet::packet::ethernet::{EthernetPacket, MutableEthernetPacket, EtherType, EtherTypes};
 
-use std::env;
+use std::{env, default};
+
+use crate::packet_inspection::get_name_addr;
+
+use super::get_name_addr::{GetNameAddr, GetNameAddrImpl};
 
 #[async_trait]
 pub trait Inspector {
@@ -47,10 +52,7 @@ impl Inspector for InspectorImpl {
         match rx.next() {
             Ok(packet) => {
                 let packet = EthernetPacket::new(packet).unwrap();
-                let src = packet.get_source().to_string();
-                let tgt = packet.get_destination().to_string();
-                let packet_type = packet.get_ethertype().to_string();
-                println!("Received new Ethernet packet src='{}';target='{}';type='{}'", src, tgt, packet_type);
+                self.process_ethernet_packet(packet);
             },
             Err(e) => {
                 // If an error occurs, we can handle it here
@@ -58,5 +60,44 @@ impl Inspector for InspectorImpl {
             }
         }
     }
+  }
+}
+
+impl InspectorImpl {
+  fn process_ethernet_packet(&self, packet: EthernetPacket) {
+    let src = packet.get_source().to_string();
+    let tgt = packet.get_destination().to_string();
+
+    match packet.get_ethertype() {
+        EtherTypes::Ipv4 => {
+          // println!("Received new IPv4 packet; Ethernet properties => src='{}';target='{}'", src, tgt);
+          self.process_ipv4_packet(packet.payload());
+        },
+        EtherTypes::Ipv6 => {
+          println!("Received new IPv6 packet; Ethernet properties => src='{}';target='{}'", src, tgt);
+        },
+        EtherTypes::Arp => {
+          println!("Received new Arp packet; Ethernet properties => src='{}';target='{}'", src, tgt);
+        },
+        default => {
+          let packet_type = packet.get_ethertype().to_string();
+          println!("Received new Ethernet packet src='{}';target='{}';type='{}'", src, tgt, packet_type);
+        }
+    }
+  }
+
+  fn process_ipv4_packet(&self, packet: &[u8]) {
+    let ipv4_packet = Ipv4Packet::new(packet).unwrap();
+    println!("Processing IPv4 packet! src='{}';target='{}';type='{}'", ipv4_packet.get_source().to_string(), ipv4_packet.get_destination().to_string(), "IPv4");
+
+    let moved_packet = packet.to_owned();
+    
+    let get_name_addr = GetNameAddrImpl{};
+    tokio::spawn(async move {
+      let packet: Ipv4Packet<'_> = Ipv4Packet::new(&moved_packet).unwrap();
+      println!("GetNameAddr spawned for IP: {};", &packet.get_destination().to_string());
+      let res = get_name_addr.get_from_packet(&packet).await;
+      println!("GetNameAddr res for IP: {} = {}", &packet.get_destination().to_string(), res);
+    });
   }
 }
