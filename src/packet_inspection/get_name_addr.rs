@@ -2,8 +2,7 @@ use std::{net::{SocketAddr, SocketAddrV4, Ipv4Addr}, collections::HashMap};
 
 use async_trait::async_trait;
 use dns_lookup::getnameinfo;
-use pnet::packet::ipv4::Ipv4Packet;
-use tokio::{runtime::Builder, task};
+use tokio::task;
 
 #[async_trait]
 pub trait GetNameAddr {
