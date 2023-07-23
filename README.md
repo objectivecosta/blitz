@@ -1,4 +1,4 @@
-# blitz
+# `blitz`
 
 ## What is `blitz`
 
