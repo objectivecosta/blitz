@@ -2,7 +2,7 @@
 
 ## What is `blitz`
 
-Blitz is a firewall that works by ARPSpoofing/NPDSpoofing devices in your network to allow for packet inspection and filtering. 
+Blitz is a firewall that works by ARP spoofing/NPD spoofing devices in your network to allow for packet inspection and filtering. 
 It is written in Rust using tokio:io.
 
 ## Stage
