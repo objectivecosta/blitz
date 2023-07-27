@@ -12,6 +12,7 @@ use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::{default, env};
 
+use crate::logger::sqlite_logger::Logger;
 use crate::packet_inspection::{get_name_addr, inspector};
 use crate::private::SELF_IP_OBJ;
 
@@ -32,14 +33,16 @@ pub struct InspectorImpl {
     interface: NetworkInterface,
     get_name_addr: Arc<Mutex<dyn GetNameAddr + Send>>,
     cache: Arc<Mutex<HashMap<String, InspectorLog>>>,
+    logger: Arc<Mutex<dyn Logger + Send>>
 }
 
 impl InspectorImpl {
-    pub fn new(interface: &NetworkInterface) -> Self {
+    pub fn new(interface: &NetworkInterface, logger: Arc<Mutex<dyn Logger + Send>>) -> Self {
         Self {
             interface: interface.to_owned(),
             get_name_addr: Arc::from(Mutex::from(GetNameAddrImpl::new())),
             cache: Arc::from(Mutex::from(HashMap::new())),
+            logger: logger,
         }
     }
 }
@@ -120,6 +123,7 @@ impl InspectorImpl {
 
         let get_name_addr = self.get_name_addr.clone();
         let cache = self.cache.clone();
+        let logger = self.logger.clone();
 
         tokio::spawn(async move {
             let get_name_addr_lock = get_name_addr.lock();
@@ -152,6 +156,11 @@ impl InspectorImpl {
                     (prev.bytes_sent as f64) / 1024.0,
                     (prev.bytes_received as f64) / 1024.0
                 );
+
+                let logger_lock = logger.lock();
+                let logger = logger_lock.await;
+
+                logger.log_traffic(to_ip, to_dns, from_ip, from_dns, packet_size, payload_size);
             } else {
                 let log = InspectorLog {
                     bytes_received: if is_received {moved_packet.len() as u64 } else { 0 },

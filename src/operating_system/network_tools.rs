@@ -20,7 +20,6 @@ impl NetworkToolsImpl {
 impl NetworkTools for NetworkToolsImpl {
     fn fetch_interface(&self, interface_name: &str) -> NetworkInterface {
         let all_interfaces = pnet::datalink::interfaces();
-        // let addrs = nix::ifaddrs::getifaddrs().unwrap();
         for interface in all_interfaces {
             if interface.name == interface_name {
                 return interface;
