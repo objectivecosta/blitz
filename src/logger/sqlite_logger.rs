@@ -1,7 +1,7 @@
 use sqlite::State;
 
 pub trait Logger {
-  fn log_traffic(&self, to_ip: &str, to_dns: &str, from_ip: &str, from_dns: &str, packet_size: i64, payload_size: i64) -> bool;
+  fn log_traffic(&self, from_ip: &str, from_dns: &str, to_ip: &str, to_dns: &str, packet_size: i64, payload_size: i64) -> bool;
 }
 
 pub struct SQLiteLogger {
@@ -17,7 +17,7 @@ impl SQLiteLogger {
 
   pub fn migrate(&self) {
     let query = "
-    CREATE TABLE traffic (to_ip TEXT, to_dns TEXT, from_ip TEXT, from_dns TEXT, packet_size INTEGER, payload_size  INTEGER);
+    CREATE TABLE traffic (from_ip TEXT, from_dns TEXT, to_ip TEXT, to_dns TEXT, packet_size INTEGER, payload_size  INTEGER);
     ";
 
     self.connection.execute(query).unwrap();
@@ -25,11 +25,9 @@ impl SQLiteLogger {
 }
 
 impl Logger for SQLiteLogger {
-    fn log_traffic(&self, to_ip: &str, to_dns: &str, from_ip: &str, from_dns: &str, packet_size: i64, payload_size: i64) -> bool {
+    fn log_traffic(&self, from_ip: &str, from_dns: &str, to_ip: &str, to_dns: &str, packet_size: i64, payload_size: i64) -> bool {
 
-      println!("[log_traffic] {} ({}) -> {} ({}). Sizes: {} ({})", to_ip, to_dns, from_ip, from_dns, packet_size, payload_size);
-
-      return true;
+      println!("[log_traffic] {} ({}) -> {} ({}). Sizes: {} ({})", from_ip, from_dns, to_ip, to_dns, packet_size, payload_size);
 
       let query = "
       INSERT INTO traffic VALUES (?, ?, ?, ?, ?, ?);

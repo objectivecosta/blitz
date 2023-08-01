@@ -18,12 +18,6 @@ use crate::private::SELF_IP_OBJ;
 
 use super::get_name_addr::{GetNameAddr, GetNameAddrImpl};
 
-#[derive(Clone, Copy)]
-pub struct InspectorLog {
-    bytes_sent: u64,
-    bytes_received: u64,
-}
-
 #[async_trait]
 pub trait Inspector {
     async fn start_inspecting(&self);
@@ -32,8 +26,7 @@ pub trait Inspector {
 pub struct InspectorImpl {
     interface: NetworkInterface,
     get_name_addr: Arc<Mutex<dyn GetNameAddr + Send>>,
-    cache: Arc<Mutex<HashMap<String, InspectorLog>>>,
-    logger: Arc<Mutex<dyn Logger + Send>>
+    logger: Arc<Mutex<dyn Logger + Send>>,
 }
 
 impl InspectorImpl {
@@ -41,7 +34,6 @@ impl InspectorImpl {
         Self {
             interface: interface.to_owned(),
             get_name_addr: Arc::from(Mutex::from(GetNameAddrImpl::new())),
-            cache: Arc::from(Mutex::from(HashMap::new())),
             logger: logger,
         }
     }
@@ -116,59 +108,38 @@ impl InspectorImpl {
         let is_received = ipv4_packet.get_destination() == SELF_IP_OBJ;
 
         if !is_sent && !is_received {
-          return;
+            return;
         }
 
         let moved_packet = packet.to_owned();
 
         let get_name_addr = self.get_name_addr.clone();
-        let cache = self.cache.clone();
         let logger = self.logger.clone();
 
+        // Spawn logger process... this can take as much time as possible since it's async.
         tokio::spawn(async move {
             let get_name_addr_lock = get_name_addr.lock();
             let mut get_name_addr = get_name_addr_lock.await;
+
+            let logger_lock = logger.lock();
+            let logger = logger_lock.await;
+
             let packet: Ipv4Packet<'_> = Ipv4Packet::new(&moved_packet).unwrap();
 
-            let unknown_address = if is_sent && !is_received {
-              packet.get_destination()
-            } else {
-              packet.get_source()
-            };
+            let source = packet.get_source();
+            let destination = packet.get_destination();
 
-            let res = get_name_addr.get_from_packet(&unknown_address).await;
+            let source_dns = get_name_addr.get_from_packet(&source).await;
+            let destination_dns = get_name_addr.get_from_packet(&destination).await;
 
-            let cache_lock = cache.lock();
-            let mut cache = cache_lock.await;
-
-            if cache.contains_key(&res) {
-                let mut prev = cache.get(&res).unwrap().clone();
-                if is_sent {
-                  prev.bytes_sent += moved_packet.len() as u64;
-                } else if is_received {
-                  prev.bytes_received += moved_packet.len() as u64;
-                }
-                cache.insert(res.clone(), prev);
-                println!(
-                    "[IPv4] {} => {}. Bytes sent to that: {}kb; Bytes received from that: {}kb",
-                    if is_sent { "localhost".to_owned() } else { res.clone() }, 
-                    if is_received { "localhost".to_owned() } else { res.clone() },
-                    (prev.bytes_sent as f64) / 1024.0,
-                    (prev.bytes_received as f64) / 1024.0
-                );
-
-                let logger_lock = logger.lock();
-                let logger = logger_lock.await;
-
-                logger.log_traffic(to_ip, to_dns, from_ip, from_dns, packet_size, payload_size);
-            } else {
-                let log = InspectorLog {
-                    bytes_received: if is_received {moved_packet.len() as u64 } else { 0 },
-                    bytes_sent: if is_sent {moved_packet.len() as u64 } else { 0 },
-                };
-
-                cache.insert(res, log);
-            }
+            logger.log_traffic(
+                source.to_string().as_str(),
+                source_dns.as_str(),
+                destination.to_string().as_str(),
+                destination_dns.as_str(),
+                moved_packet.len() as i64,
+                packet.payload().len() as i64,
+            );
         });
     }
 }
