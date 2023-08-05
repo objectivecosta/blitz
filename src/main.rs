@@ -1,12 +1,13 @@
-use std::{sync::{Arc, atomic::AtomicBool}, time::{SystemTime, UNIX_EPOCH}};
+use std::{sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
-use arp::{spoofer::ArpSpoofer, query::{ArpQueryExecutorImpl}};
+
 use operating_system::network_tools::NetworkTools;
-use packet_inspection::inspector::{Inspector, self, InspectorImpl};
+use packet_inspection::inspector::InspectorImpl;
+
 use pnet::util::MacAddr;
 use tokio::sync::Mutex;
 
-use crate::{arp::{spoofer::{NetworkLocation}, query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor}}, logger::sqlite_logger::SQLiteLogger};
+use crate::{logger::sqlite_logger::SQLiteLogger, arp::{network_location::NetworkLocation, query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor}, spoofer::AsyncArpSpoofer}};
 
 pub mod packet_inspection;
 pub mod arp;
@@ -54,17 +55,27 @@ async fn main() {
 
     let gateway_mac_addr_cached = query.query(gateway_ip_fetched).await;
 
+    let gateway_location = NetworkLocation {
+        ipv4: gateway_ip,
+        hw: gateway_mac_addr
+    };
+
     println!("Target MacAddr: {}; Gateway Fetched: {}; Gateway Fixed: {}", target_mac_addr.to_string(), gateway_mac_addr, gateway_mac_addr_cached);
     
-    // let mut sending_spoofer = arp::spoofer::ArpSpooferImpl::new(
-    //     en0_interface,
-    //     inspector_location,
-    //     gateway
-    // );
+    let mut sending_spoofer = arp::spoofer::AsyncArpSpooferImpl::new(
+        en0_interface,
+        inspector_location,
+        gateway_location
+    );
 
-    // let target = std::net::Ipv4Addr::from([***REMOVED***]);
-    // let target_hw_addr = MacAddr::new(***REMOVED***);
-    // sending_spoofer.spoof_target(target);
+    let target = std::net::Ipv4Addr::from([***REMOVED***]);
+    let target_hw_addr = MacAddr::new(***REMOVED***);
+    let target_location = NetworkLocation {
+        ipv4: target,
+        hw: target_hw_addr
+    };
+
+    sending_spoofer.spoof_target(target_location).await;
 
     // tokio::join!(inspector.start_inspecting());
 }
