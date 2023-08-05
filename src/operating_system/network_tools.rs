@@ -1,3 +1,5 @@
+use std::{process::Command, net::Ipv4Addr, str::FromStr};
+
 use nix::{sys::socket::{SockAddr, SockaddrStorage}, net::if_::Interface};
 use pnet::{util::MacAddr, datalink::NetworkInterface};
 
@@ -7,6 +9,7 @@ pub trait NetworkTools {
     fn fetch_hardware_address(&self, interface_name: &str) -> Option<MacAddr>;
     fn fetch_ipv4_address(&self, interface_name: &str) -> Option<std::net::Ipv4Addr>;
     fn fetch_ipv6_address(&self, interface_name: &str) -> Option<String>;
+    fn fetch_gateway_ip(&self) -> Ipv4Addr;
 }
 
 pub struct NetworkToolsImpl {}
@@ -49,6 +52,7 @@ impl NetworkTools for NetworkToolsImpl {
 
         return None;
     }
+
     fn fetch_ipv6_address(&self, interface_name: &str) -> Option<String> {
         let addrs = nix::ifaddrs::getifaddrs().unwrap();
         for ifaddr in addrs {
@@ -110,5 +114,22 @@ impl NetworkTools for NetworkToolsImpl {
                 }
             }
         }
+    }
+
+    fn fetch_gateway_ip(&self) -> Ipv4Addr {
+        let macos = "route -n get default | grep 'gateway' | awk '{print $2}'";
+        let output = Command::new("sh")
+        .arg("-c")
+        .arg(macos)
+        .output()
+        .expect("failed to execute process");
+        
+        let hello = output.stdout;
+        let as_str = String::from_utf8(hello).unwrap();
+        let target_len = as_str.trim();
+        
+        let ipv4 = Ipv4Addr::from_str(target_len);
+
+        return ipv4.unwrap();
     }
 }

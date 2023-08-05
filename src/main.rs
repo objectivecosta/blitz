@@ -1,12 +1,12 @@
-use std::{sync::Arc, time::{SystemTime, UNIX_EPOCH}};
+use std::{sync::{Arc, atomic::AtomicBool}, time::{SystemTime, UNIX_EPOCH}};
 
-use arp::{spoofer::ArpSpoofer, query::{ArpQueryExecutorImpl, ArpQueryExecutor}};
+use arp::{spoofer::ArpSpoofer, query::{ArpQueryExecutorImpl}};
 use operating_system::network_tools::NetworkTools;
 use packet_inspection::inspector::{Inspector, self, InspectorImpl};
 use pnet::util::MacAddr;
 use tokio::sync::Mutex;
 
-use crate::{arp::spoofer::{NetworkLocation}, logger::sqlite_logger::SQLiteLogger};
+use crate::{arp::{spoofer::{NetworkLocation}, query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor}}, logger::sqlite_logger::SQLiteLogger};
 
 pub mod packet_inspection;
 pub mod arp;
@@ -20,6 +20,7 @@ pub mod logger;
 async fn main() {
     // We will spoof ARP packets saying we're the router to the client
     let tools = operating_system::network_tools::NetworkToolsImpl::new();
+    let gateway_ip_fetched = tools.fetch_gateway_ip();
 
     let en0_interface = tools.fetch_interface("en0");
     let en0_hw_addr = tools.fetch_hardware_address("en0").unwrap();
@@ -44,13 +45,16 @@ async fn main() {
     };
 
     let gateway_ip = std::net::Ipv4Addr::from([***REMOVED***]);
-    let target = std::net::Ipv4Addr::from([***REMOVED***]);
+    let target = std::net::Ipv4Addr::from([***REMOVED*** + 20]);
 
-    let mut query = ArpQueryExecutorImpl::new(en0_interface, inspector_location);
+    let query = AsyncArpQueryExecutorImpl::new(en0_interface.clone(), inspector_location);
+    let target_mac_addr = query.query(target).await;
 
-    let target_mac_addr = query.query(target);
+    let gateway_mac_addr = query.query(gateway_ip).await;
 
-    println!("Target MacAddr: {}", target_mac_addr.to_string());
+    let gateway_mac_addr_cached = query.query(gateway_ip_fetched).await;
+
+    println!("Target MacAddr: {}; Gateway Fetched: {}; Gateway Fixed: {}", target_mac_addr.to_string(), gateway_mac_addr, gateway_mac_addr_cached);
     
     // let mut sending_spoofer = arp::spoofer::ArpSpooferImpl::new(
     //     en0_interface,

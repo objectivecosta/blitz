@@ -7,6 +7,7 @@ pub trait ArpSpoofer {
     fn spoof_target(&mut self, target: NetworkLocation) -> bool;
 }
 
+#[derive(Clone, Copy)]
 pub struct NetworkLocation {
     pub ipv4: Ipv4Addr,
     pub hw: MacAddr
