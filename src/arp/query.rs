@@ -8,15 +8,15 @@ use async_trait::async_trait;
 use pnet::{
     datalink::{self, Channel, DataLinkReceiver, DataLinkSender, NetworkInterface},
     packet::{
-        arp::{Arp, ArpHardwareType, ArpOperation, ArpPacket, MutableArpPacket},
+        arp::{ArpHardwareType, ArpOperation, ArpPacket, MutableArpPacket},
         ethernet::{EtherType, EtherTypes, EthernetPacket, MutableEthernetPacket},
         MutablePacket, Packet,
     },
     util::MacAddr,
 };
-use tokio::{task, time::timeout, sync::mpsc::{self, Receiver}};
+use tokio::{task, time::timeout, sync::mpsc::{self}};
 
-use super::spoofer::NetworkLocation;
+use super::network_location::NetworkLocation;
 
 #[async_trait]
 pub trait AsyncArpQueryExecutor {
@@ -41,14 +41,6 @@ impl AsyncArpQueryExecutorImpl {
 #[async_trait]
 impl AsyncArpQueryExecutor for AsyncArpQueryExecutorImpl {
     async fn query(&self, ipv4: Ipv4Addr) -> MacAddr {
-        // let future = async move {
-        //   let lock =  executor.lock();
-        //   let mut executor = lock.await;
-
-        //   let result = executor.query(ipv4);
-        //   return result;
-        // };
-
         let executor = self._impl.clone();
         let cancellation_token = self.cancellation_token.clone();
         let future = task::spawn_blocking(move || {
