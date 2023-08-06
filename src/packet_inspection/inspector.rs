@@ -1,15 +1,16 @@
 use async_trait::async_trait;
-use pnet::datalink::Channel::Ethernet;
-use pnet::datalink::{self, NetworkInterface};
+use pnet::datalink::Channel::{Ethernet, self};
+use pnet::datalink::{self, NetworkInterface, DataLinkSender, DataLinkReceiver};
 use pnet::packet::ethernet::{EtherType, EtherTypes, EthernetPacket, MutableEthernetPacket};
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::{MutablePacket, Packet};
-use tokio::sync::Mutex;
+use tokio::task;
 
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use std::sync::Arc;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::{default, env};
 
 use crate::logger::sqlite_logger::Logger;
@@ -19,51 +20,77 @@ use crate::private::SELF_IP_OBJ;
 use super::get_name_addr::{GetNameAddr, GetNameAddrImpl};
 
 #[async_trait]
-pub trait Inspector {
+pub trait AsyncInspector {
     async fn start_inspecting(&self);
+}
+
+pub struct AsyncInspectorImpl {
+    _impl: Arc<Mutex<InspectorImpl>>
 }
 
 pub struct InspectorImpl {
     interface: NetworkInterface,
-    get_name_addr: Arc<Mutex<dyn GetNameAddr + Send>>,
-    logger: Arc<Mutex<dyn Logger + Send>>,
+    get_name_addr: Arc<tokio::sync::Mutex<dyn GetNameAddr + Send>>,
+    logger: Arc<tokio::sync::Mutex<dyn Logger + Send>>,
+
+    sender: Option<Arc<Mutex<Box<dyn DataLinkSender>>>>,
+    receiver: Option<Arc<Mutex<Box<dyn DataLinkReceiver>>>>,
 }
 
-impl InspectorImpl {
-    pub fn new(interface: &NetworkInterface, logger: Arc<Mutex<dyn Logger + Send>>) -> Self {
+impl AsyncInspectorImpl {
+    pub fn new(interface: &NetworkInterface, logger: Arc<tokio::sync::Mutex<dyn Logger + Send>>) -> Self {
         Self {
-            interface: interface.to_owned(),
-            get_name_addr: Arc::from(Mutex::from(GetNameAddrImpl::new())),
-            logger: logger,
+            _impl: Arc::from(Mutex::new(InspectorImpl::new(interface, logger)))
         }
     }
 }
 
-#[async_trait]
-impl Inspector for InspectorImpl {
-    async fn start_inspecting(&self) {
-        let interface_names_match = |iface: &NetworkInterface| iface == &self.interface;
-
-        // Find the network interface with the provided name
-        let interfaces = datalink::interfaces();
-        let interface = interfaces
-            .into_iter()
-            .filter(interface_names_match)
-            .next()
-            .unwrap();
-
-        // Create a new channel, dealing with layer 2 packets
-        let (mut tx, mut rx) = match datalink::channel(&interface, Default::default()) {
-            Ok(Ethernet(tx, rx)) => (tx, rx),
-            Ok(_) => panic!("Unhandled channel type"),
-            Err(e) => panic!(
-                "An error occurred when creating the datalink channel: {}",
-                e
-            ),
+impl InspectorImpl {
+    pub fn new(interface: &NetworkInterface, logger: Arc<tokio::sync::Mutex<dyn Logger + Send>>) -> Self {
+        let mut result = Self {
+            interface: interface.to_owned(),
+            get_name_addr: Arc::from(tokio::sync::Mutex::from(GetNameAddrImpl::new())),
+            logger: logger,
+            sender: None,
+            receiver: None
         };
 
+        result.setup_socket();
+
+        return result;
+    }
+
+    fn setup_socket(&mut self) {
+        let (tx, rx) = match datalink::channel(&self.interface, Default::default()) {
+            Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
+            Ok(_) => panic!("Unhandled channel type"),
+            Err(e) => panic!("An error occurred when creating the datalink channel: {}", e)
+        };
+
+        self.sender = Some(Arc::from(Mutex::new(tx)));
+        self.receiver = Some(Arc::from(Mutex::new(rx)));
+    }
+}
+
+#[async_trait]
+impl AsyncInspector for AsyncInspectorImpl {
+    async fn start_inspecting(&self) {
+        let executor = self._impl.clone();
+        task::spawn_blocking(move || {
+            let executor_lock = executor.lock();
+            let mut executor = executor_lock.unwrap();
+            executor.start_inspecting();
+        });
+    }
+}
+
+impl InspectorImpl {
+    fn start_inspecting(&mut self) {
+        let mut receiver = self.receiver.clone();
+        let receiver = receiver.as_mut().unwrap();
+        let mut receiver = receiver.lock().unwrap();
         loop {
-            match rx.next() {
+            match receiver.next() {
                 Ok(packet) => {
                     let packet = EthernetPacket::new(packet).unwrap();
                     self.process_ethernet_packet(packet);
@@ -75,16 +102,14 @@ impl Inspector for InspectorImpl {
             }
         }
     }
-}
-
-impl InspectorImpl {
+    
     fn process_ethernet_packet(&self, packet: EthernetPacket) {
         let src = packet.get_source().to_string();
         let tgt = packet.get_destination().to_string();
 
         match packet.get_ethertype() {
             EtherTypes::Ipv4 => {
-                // println!("Received new IPv4 packet; Ethernet properties => src='{}';target='{}'", src, tgt);
+                println!("Received new IPv4 packet; Ethernet properties => src='{}';target='{}'", src, tgt);
                 self.process_ipv4_packet(packet.payload());
             }
             EtherTypes::Ipv6 => {
