@@ -1,6 +1,4 @@
 use std::{process::Command, net::Ipv4Addr, str::FromStr};
-
-use nix::{sys::socket::{SockAddr, SockaddrStorage}, net::if_::Interface};
 use pnet::{util::MacAddr, datalink::NetworkInterface};
 
 pub trait NetworkTools {
@@ -103,7 +101,7 @@ impl NetworkTools for NetworkToolsImpl {
         for ifaddr in addrs {
             match ifaddr.address {
                 Some(address) => {
-                    let hw_address = address.as_link_addr();
+                    let _hw_address = address.as_link_addr();
                     println!("interface {} address {}", ifaddr.interface_name, address);
                 }
                 None => {
