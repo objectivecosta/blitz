@@ -1,20 +1,13 @@
 use async_trait::async_trait;
-use pnet::datalink::Channel::{Ethernet, self};
+use pnet::datalink::Channel::{self};
 use pnet::datalink::{self, NetworkInterface, DataLinkSender, DataLinkReceiver};
-use pnet::packet::ethernet::{EtherType, EtherTypes, EthernetPacket, MutableEthernetPacket};
+use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ipv4::Ipv4Packet;
-use pnet::packet::{MutablePacket, Packet};
+use pnet::packet::Packet;
 use tokio::task;
-
-use std::borrow::BorrowMut;
-use std::collections::HashMap;
-use std::net::Ipv4Addr;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::{default, env};
 
 use crate::logger::sqlite_logger::Logger;
-use crate::packet_inspection::{get_name_addr, inspector};
 use crate::private::SELF_IP_OBJ;
 
 use super::get_name_addr::{GetNameAddr, GetNameAddrImpl};
@@ -120,7 +113,7 @@ impl InspectorImpl {
             }
             default => {
                 let packet_type = packet.get_ethertype().to_string();
-                // println!("Received new Ethernet packet src='{}';target='{}';type='{}'", src, tgt, packet_type);
+                println!("Received new Ethernet packet src='{}';target='{}';type='{}'", src, tgt, packet_type);
             }
         }
     }

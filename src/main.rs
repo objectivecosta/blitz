@@ -2,10 +2,9 @@ use std::{sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
 
 use operating_system::network_tools::NetworkTools;
-use packet_inspection::inspector::InspectorImpl;
+
 
 use pnet::util::MacAddr;
-use tokio::sync::Mutex;
 
 use crate::{logger::sqlite_logger::SQLiteLogger, arp::{network_location::NetworkLocation, query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor}, spoofer::AsyncArpSpoofer}, packet_inspection::inspector::{AsyncInspectorImpl, AsyncInspector}};
 

@@ -8,15 +8,14 @@ use async_trait::async_trait;
 use pnet::{
     datalink::{self, Channel, DataLinkReceiver, DataLinkSender, NetworkInterface},
     packet::{
-        arp::{ArpHardwareType, ArpOperation, ArpPacket, MutableArpPacket},
-        ethernet::{EtherType, EtherTypes, EthernetPacket, MutableEthernetPacket},
-        MutablePacket, Packet,
+        arp::ArpPacket,
+        ethernet::{EtherTypes, EthernetPacket}, Packet,
     },
     util::MacAddr,
 };
 use tokio::{task, time::timeout, sync::mpsc::{self}};
 
-use super::network_location::NetworkLocation;
+use super::{network_location::NetworkLocation, packet_builder::{ArpPacketBuilder, ArpPacketBuilderImpl}};
 
 #[async_trait]
 pub trait AsyncArpQueryExecutor {
@@ -106,11 +105,7 @@ impl ArpQueryExecutorImpl {
         self.sender = Some(Arc::from(Mutex::new(tx)));
         self.receiver = Some(Arc::from(Mutex::new(rx)));
     }
-
-    fn abort_query(&mut self) {
-        self.cancellation_token.store(true, std::sync::atomic::Ordering::Relaxed);
-    }
-
+    
     fn query(&mut self, ipv4: Ipv4Addr) -> MacAddr {
         let query_packet = self.make_query_packet(ipv4);
 
@@ -160,27 +155,13 @@ impl ArpQueryExecutorImpl {
     }
 
     fn make_query_packet(&self, ipv4: Ipv4Addr) -> Vec<u8> {
-        let mut arp_packet_buffer = [0u8; 28];
-        let mut arp_packet = MutableArpPacket::new(&mut arp_packet_buffer).unwrap();
-        arp_packet.set_hardware_type(ArpHardwareType::new(1)); // Ethernet
-        arp_packet.set_protocol_type(EtherType::new(0x0800)); // IPv4
-        arp_packet.set_hw_addr_len(6); // ethernet is 6 long
-        arp_packet.set_proto_addr_len(4); // ipv4s is 4 long
-        arp_packet.set_operation(ArpOperation::new(1)); // 1 is request; 2 is reply.
-        arp_packet.set_sender_hw_addr(self.current_location.hw);
-        arp_packet.set_sender_proto_addr(self.current_location.ipv4);
-        arp_packet.set_target_hw_addr(MacAddr(0xff, 0xff, 0xff, 0xff, 0xff, 0xff)); // Broadcast
-        arp_packet.set_target_proto_addr(ipv4);
+        let builder = ArpPacketBuilderImpl::new();
+        let target = NetworkLocation { ipv4: ipv4, hw: MacAddr::broadcast() };
 
-        let mut ethernet_buffer = [0u8; 42];
-        let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer).unwrap();
+        let arp_request = builder.build_request(self.current_location, target);
+        let ethernet_request = builder.wrap_in_ethernet(self.current_location.hw, target.hw, EtherTypes::Arp, arp_request);
 
-        ethernet_packet.set_destination(MacAddr::broadcast());
-        ethernet_packet.set_source(self.interface.mac.unwrap());
-        ethernet_packet.set_ethertype(EtherTypes::Arp);
-        ethernet_packet.set_payload(arp_packet.packet_mut());
-
-        return ethernet_packet.packet().to_owned();
+        return ethernet_request;
     }
 
     fn process_query_response(
