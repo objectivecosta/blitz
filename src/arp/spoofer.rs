@@ -95,7 +95,7 @@ impl ArpSpooferImpl {
 
     fn build_arp_spoofed_packet(&self, target: NetworkLocation) -> Vec<u8> {
         let mut arp_packet_buffer = [0u8; 28];
-        let mut  arp_packet = MutableArpPacket::new(&mut arp_packet_buffer).unwrap();
+        let mut arp_packet = MutableArpPacket::new(&mut arp_packet_buffer).unwrap();
         arp_packet.set_hardware_type(ArpHardwareType::new(1)); // Ethernet
         arp_packet.set_protocol_type(EtherType::new(0x0800)); // IPv4
         arp_packet.set_hw_addr_len(6);  // ethernet is 6 long

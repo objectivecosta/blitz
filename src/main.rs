@@ -7,7 +7,7 @@ use packet_inspection::inspector::InspectorImpl;
 use pnet::util::MacAddr;
 use tokio::sync::Mutex;
 
-use crate::{logger::sqlite_logger::SQLiteLogger, arp::{network_location::NetworkLocation, query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor}, spoofer::AsyncArpSpoofer}};
+use crate::{logger::sqlite_logger::SQLiteLogger, arp::{network_location::NetworkLocation, query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor}, spoofer::AsyncArpSpoofer}, packet_inspection::inspector::{AsyncInspectorImpl, AsyncInspector}};
 
 pub mod packet_inspection;
 pub mod arp;
@@ -35,9 +35,9 @@ async fn main() {
 
     logger.migrate();
 
-    let inspector = InspectorImpl::new(
+    let inspector = AsyncInspectorImpl::new(
         &en0_interface, 
-        Arc::from(Mutex::from(logger))
+        Arc::from(tokio::sync::Mutex::from(logger))
     );
 
     let inspector_location = NetworkLocation {
@@ -76,6 +76,5 @@ async fn main() {
     };
 
     sending_spoofer.spoof_target(target_location).await;
-
-    // tokio::join!(inspector.start_inspecting());
+    tokio::join!(inspector.start_inspecting());
 }
