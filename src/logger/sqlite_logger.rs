@@ -20,6 +20,8 @@ impl SQLiteLogger {
     CREATE TABLE traffic (from_ip TEXT, from_dns TEXT, to_ip TEXT, to_dns TEXT, packet_size INTEGER, payload_size  INTEGER);
     ";
 
+    println!("Logger MIGRATE!");
+
     self.connection.execute(query).unwrap();
   }
 }
