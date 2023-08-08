@@ -1,6 +1,7 @@
 use std::{sync::{Arc, atomic::AtomicBool}, time::{SystemTime, UNIX_EPOCH}};
 
 use arp::{spoofer::ArpSpoofer, query::{ArpQueryExecutorImpl}};
+use chrono::{Utc, DateTime};
 use operating_system::network_tools::NetworkTools;
 use packet_inspection::inspector::{Inspector, self, InspectorImpl};
 use pnet::util::MacAddr;
@@ -27,9 +28,11 @@ async fn main() {
     let en0_ipv4 = tools.fetch_ipv4_address("en0").unwrap();
 
     let now = SystemTime::now();
-    let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time exists");
+    let date_time: DateTime<Utc> = chrono::DateTime::from(now);
+    let date_time_format = "%Y-%m-%d-%H-%M-%S";
+    let formatted = date_time.format(date_time_format).to_string();
 
-    let path = format!("./db-{}.sqlite", since_the_epoch.as_millis());
+    let path = format!("./db-{}.sqlite", formatted);
     let logger = SQLiteLogger::new(path.as_str());
 
     logger.migrate();
@@ -66,5 +69,5 @@ async fn main() {
     // let target_hw_addr = MacAddr::new(***REMOVED***);
     // sending_spoofer.spoof_target(target);
 
-    // tokio::join!(inspector.start_inspecting());
+    tokio::join!(inspector.start_inspecting());
 }
