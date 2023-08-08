@@ -135,7 +135,6 @@ impl ArpQueryExecutorImpl {
               println!("Abort signal!");
               return MacAddr(0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
             } else {
-              println!("Receiver signal!");
                 match receiver.next() {
                     Ok(packet) => {
                         let packet = EthernetPacket::new(packet).unwrap();

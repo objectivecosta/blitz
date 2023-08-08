@@ -5,9 +5,11 @@ use pnet::packet::ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket};
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::Packet;
 use pnet::util::MacAddr;
-use tokio::task;
-use std::sync::{Arc, Mutex};
+use tokio::{task, join};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 
+use crate::arp::network_location::NetworkLocation;
 use crate::logger::sqlite_logger::Logger;
 use crate::private::SELF_IP_OBJ;
 
@@ -18,55 +20,69 @@ pub trait AsyncInspector {
     async fn start_inspecting(&self);
 }
 
+// pub struct EthernetChannel {
+//     tx: Box<dyn DataLinkSender>,
+//     rx: Box<dyn DataLinkReceiver>,
+// }
+
+// impl EthernetChannel {
+//     pub fn new(tx: Box<dyn DataLinkSender>,
+//         rx: Box<dyn DataLinkReceiver>) -> Self {
+//             Self {
+//                 tx, rx
+//             }
+//         }
+// }
+
 pub struct AsyncInspectorImpl {
-    _impl: Arc<Mutex<InspectorImpl>>
+    _impl: Arc<std::sync::Mutex<InspectorImpl>>
 }
 
 pub struct InspectorImpl {
     interface: NetworkInterface,
-    gateway_hw: MacAddr,
-    target_hw: MacAddr, // TODO(objectivecosta): Make this a proper ARP cache instead of just a single target.
+    gateway_location: NetworkLocation,
+    target_location: NetworkLocation, // TODO(objectivecosta): Make this a proper ARP cache instead of just a single target.
     get_name_addr: Arc<tokio::sync::Mutex<dyn GetNameAddr + Send>>,
-    logger: Arc<tokio::sync::Mutex<dyn Logger + Send>>,
-
-    sender: Option<Arc<Mutex<Box<dyn DataLinkSender>>>>,
-    receiver: Option<Arc<Mutex<Box<dyn DataLinkReceiver>>>>,
+    logger: Arc<tokio::sync::Mutex<Box<dyn Logger + Send>>>,
+    sender: Arc<std::sync::Mutex<Box<dyn DataLinkSender>>>,
+    receiver: Arc<std::sync::Mutex<Box<dyn DataLinkReceiver>>>,
 }
 
 impl AsyncInspectorImpl {
-    pub fn new(interface: &NetworkInterface, gateway_hw: MacAddr, target_hw: MacAddr, logger: Arc<tokio::sync::Mutex<dyn Logger + Send>>) -> Self {
+    pub fn new(interface: &NetworkInterface, gateway_location: NetworkLocation, target_location: NetworkLocation, logger: Box<dyn Logger + Send>) -> Self {
         Self {
-            _impl: Arc::from(Mutex::new(InspectorImpl::new(interface, gateway_hw, target_hw, logger)))
+            _impl: Arc::from(std::sync::Mutex::new(InspectorImpl::new(interface, gateway_location, target_location, logger)))
         }
     }
 }
 
 impl InspectorImpl {
-    pub fn new(interface: &NetworkInterface, gateway_hw: MacAddr, target_hw: MacAddr, logger: Arc<tokio::sync::Mutex<dyn Logger + Send>>) -> Self {
+    pub fn new(interface: &NetworkInterface, gateway_location: NetworkLocation, target_location: NetworkLocation, logger: Box<dyn Logger + Send>) -> Self {
+        let (tx, rx) = Self::setup_socket(&interface);
+
         let mut result = Self {
             interface: interface.to_owned(),
-            gateway_hw: gateway_hw,
-            target_hw: target_hw,
-            get_name_addr: Arc::from(tokio::sync::Mutex::from(GetNameAddrImpl::new())),
-            logger: logger,
-            sender: None,
-            receiver: None
+            gateway_location: gateway_location,
+            target_location: target_location,
+            get_name_addr: Arc::from(tokio::sync::Mutex::new(GetNameAddrImpl::new())),
+            logger: Arc::from(tokio::sync::Mutex::new(logger)),
+            sender: Arc::from(std::sync::Mutex::new(tx)),
+            receiver: Arc::from(std::sync::Mutex::new(rx)),
         };
 
-        result.setup_socket();
+        // result.setup_socket();
 
         return result;
     }
 
-    fn setup_socket(&mut self) {
-        let (tx, rx) = match datalink::channel(&self.interface, Default::default()) {
+    fn setup_socket(interface: &NetworkInterface) -> (Box<dyn DataLinkSender>, Box<dyn DataLinkReceiver>) {
+        let channel = match datalink::channel(&interface, Default::default()) {
             Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
             Ok(_) => panic!("Unhandled channel type"),
             Err(e) => panic!("An error occurred when creating the datalink channel: {}", e)
         };
 
-        self.sender = Some(Arc::from(Mutex::new(tx)));
-        self.receiver = Some(Arc::from(Mutex::new(rx)));
+        return channel;
     }
 }
 
@@ -74,18 +90,17 @@ impl InspectorImpl {
 impl AsyncInspector for AsyncInspectorImpl {
     async fn start_inspecting(&self) {
         let executor = self._impl.clone();
-        task::spawn_blocking(move || {
+        let _ = task::spawn_blocking(move || {
             let executor_lock = executor.lock();
             let mut executor = executor_lock.unwrap();
             executor.start_inspecting();
-        });
+        }).await;
     }
 }
 
 impl InspectorImpl {
     fn start_inspecting(&mut self) {
-        let mut receiver = self.receiver.clone();
-        let receiver = receiver.as_mut().unwrap();
+        let receiver = self.receiver.clone();
         let mut receiver = receiver.lock().unwrap();
         loop {
             match receiver.next() {
@@ -105,26 +120,13 @@ impl InspectorImpl {
         let src = packet.get_source().to_string();
         let tgt = packet.get_destination().to_string();
 
-        let is_outgoing = packet.get_source() == self.target_hw;
-        let is_incoming = packet.get_source() == self.gateway_hw;
+        let is_outgoing = packet.get_source() == self.target_location.hw;
+        let is_incoming = packet.get_source() == self.gateway_location.hw;
 
         match packet.get_ethertype() {
             EtherTypes::Ipv4 => {
-
                 if is_incoming || is_outgoing {
-                    self.process_ipv4_packet(packet.payload());
-                } else {
-                    println!("Skipping non-intercepted IPv4 packet;");
-
-                    // println!("Skipping non-intercepted IPv4 packet; Ethernet properties => src='{}';target='{}'", src, tgt);
-                }
-
-                if is_outgoing {
-                    println!("Received new outgoing IPv4 packet; Ethernet properties => src='{}';target='{}'", src, tgt);
-                    self.forward_outgoing_packet(packet);
-                } else if is_incoming {
-                    println!("Received new incoming IPv4 packet; Ethernet properties => src='{}';target='{}'", src, tgt);
-                    self.forward_incoming_packet(packet);
+                    self.process_ipv4_packet(packet.packet());
                 }
             }
             EtherTypes::Ipv6 => {
@@ -142,50 +144,52 @@ impl InspectorImpl {
 
     fn forward_outgoing_packet(&self, packet: EthernetPacket) {
         let mut modified_packet = MutableEthernetPacket::owned(packet.packet().to_vec()).unwrap();
-        modified_packet.set_destination(self.gateway_hw);
+        modified_packet.set_destination(self.gateway_location.hw);
         modified_packet.set_source(self.interface.mac.unwrap());
-        let mut sender = self.sender.clone();
 
-        if let Some(sender) = sender.as_mut() {
-            let mut lock = sender.lock().unwrap();
-            lock.send_to(modified_packet.packet(), None);
-        }
+        let sender = self.sender.clone();
+        let mut sender = sender.lock().unwrap();
+
+        sender.send_to(modified_packet.packet(), None);
     }
 
     fn forward_incoming_packet(&self, packet: EthernetPacket) {
         let mut modified_packet = MutableEthernetPacket::owned(packet.packet().to_vec()).unwrap();
-        modified_packet.set_destination(self.target_hw);
+        modified_packet.set_destination(self.target_location.hw);
         modified_packet.set_source(self.interface.mac.unwrap());
 
-        let mut sender = self.sender.clone();
+        let sender = self.sender.clone();
+        let mut sender = sender.lock().unwrap();
 
-        if let Some(sender) = sender.as_mut() {
-            let mut lock = sender.lock().unwrap();
-            lock.send_to(modified_packet.packet(), None);
-        }
+        sender.send_to(modified_packet.packet(), None);
     }
 
     fn process_ipv4_packet(&self, packet: &[u8]) {
-        let ipv4_packet = Ipv4Packet::new(packet).unwrap();
-        println!("Processing IPv4 packet! src='{}';target='{}';type='{}'", ipv4_packet.get_source().to_string(), ipv4_packet.get_destination().to_string(), "IPv4");
+        let ethernet_packet = EthernetPacket::new(packet.clone()).unwrap();
+        let ipv4_packet = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
 
-        // let is_sent = ipv4_packet.get_source() == SELF_IP_OBJ;
-        // let is_received = ipv4_packet.get_destination() == SELF_IP_OBJ;
+        let is_incoming_eth = ethernet_packet.get_source() == self.gateway_location.hw;
+        let is_incoming_to_target = is_incoming_eth && ipv4_packet.get_destination() == self.target_location.ipv4;
+        let is_outgoing = ethernet_packet.get_source() == self.target_location.hw;
 
-        // if !is_sent && !is_received {
-        //     return;
-        // }
+        if !is_incoming_to_target && !is_outgoing {
+            println!("Skipping IPv4 packet! src='{}' ({});target='{}' ({})", ethernet_packet.get_source().to_string(), ipv4_packet.get_source().to_string(), ethernet_packet.get_destination().to_string(), ipv4_packet.get_destination().to_string());
+            return;
+        }
 
-        let moved_packet = packet.to_owned();
+        println!("Processing IPv4 packet! src='{}';target='{}';is_incoming_to_target={};is_outgoing={}", ipv4_packet.get_source().to_string(), ipv4_packet.get_destination().to_string(), is_incoming_to_target, is_outgoing);
+
+        if is_outgoing {
+            self.forward_outgoing_packet(EthernetPacket::new(packet.clone()).unwrap())
+        }
+
+        let moved_packet = ipv4_packet.packet().to_owned();
 
         let get_name_addr = self.get_name_addr.clone();
         let logger = self.logger.clone();
 
         // Spawn logger process... this can take as much time as possible since it's async.
-        println!("before ABC!");
-
         tokio::spawn(async move {
-            println!("ABC!");
             let get_name_addr_lock = get_name_addr.lock();
             let mut get_name_addr = get_name_addr_lock.await;
 

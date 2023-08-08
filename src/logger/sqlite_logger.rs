@@ -36,11 +36,12 @@ impl Logger for SQLiteLogger {
       ";
 
       let mut statement = self.connection.prepare(query).unwrap();
-      statement.bind((1, to_ip)).unwrap();
-      statement.bind((2, to_dns)).unwrap();
 
-      statement.bind((3, from_ip)).unwrap();
-      statement.bind((4, from_dns)).unwrap();
+      statement.bind((1, from_ip)).unwrap();
+      statement.bind((2, from_dns)).unwrap();
+
+      statement.bind((3, to_ip)).unwrap();
+      statement.bind((4, to_dns)).unwrap();
 
       statement.bind((5, packet_size)).unwrap();
       statement.bind((6, payload_size)).unwrap();
