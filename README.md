@@ -26,7 +26,7 @@ This is in the proof of concept stage/hobby. DO *NOT* use it for production appl
 - [ ] Can filter packets based on IP ranges
 - [ ] Can filter packets based on specific hostnames
 - [ ] Can filter packets based on RegEx on hostnames
-- [ ] Can create log files of traffic data (SORTA)
+- [x] Can create log files of traffic data
 
 ### API
 
