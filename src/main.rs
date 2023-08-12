@@ -16,7 +16,7 @@ use crate::{
         spoofer::{AsyncArpSpoofer, SpoofingEntry},
     },
     logger::sqlite_logger::SQLiteLogger,
-    packet_inspection::inspector::{AsyncInspector, AsyncInspectorImpl},
+    packet_inspection::inspector::{AsyncInspector, AsyncInspectorImpl}, private::{GATEWAY_IP_OBJ, TARGET_IP_OBJ},
 };
 
 pub mod arp;
@@ -52,8 +52,8 @@ async fn main() {
         ipv4: en0_ipv4,
     };
 
-    let gateway_ip = std::net::Ipv4Addr::from([***REMOVED***]);
-    let target = std::net::Ipv4Addr::from([***REMOVED***]);
+    let gateway_ip = GATEWAY_IP_OBJ;
+    let target = TARGET_IP_OBJ; 
 
     let query = AsyncArpQueryExecutorImpl::new(en0_interface.clone(), inspector_location);
     let target_hw_addr = query.query(target).await;
