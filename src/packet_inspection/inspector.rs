@@ -181,6 +181,8 @@ impl InspectorImpl {
 
         if is_outgoing {
             self.forward_outgoing_packet(EthernetPacket::new(packet.clone()).unwrap())
+        } else if is_incoming_to_target {
+            self.forward_incoming_packet(EthernetPacket::new(packet.clone()).unwrap())
         }
 
         let moved_packet = ipv4_packet.packet().to_owned();

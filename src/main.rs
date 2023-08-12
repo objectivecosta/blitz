@@ -16,10 +16,7 @@ use crate::{
         spoofer::{AsyncArpSpoofer, SpoofingEntry},
     },
     logger::sqlite_logger::SQLiteLogger,
-    packet_inspection::{
-        inspector::{AsyncInspector, AsyncInspectorImpl},
-        inspector_vintage::{InspectorVintage, InspectorVintageImpl},
-    },
+    packet_inspection::inspector::{AsyncInspector, AsyncInspectorImpl},
 };
 
 pub mod arp;
@@ -77,14 +74,6 @@ async fn main() {
         gateway_mac_addr_cached
     );
 
-    // let inspector_vintage = InspectorVintageImpl::new(
-    //     &en0_interface,
-    //     gateway_mac_addr_cached,
-    //     target_hw_addr,
-    //     Arc::from(tokio::sync::Mutex::from(logger))
-    // );
-    // let inspector = inspector_vintage;
-
     let inspector = AsyncInspectorImpl::new(
         &en0_interface,
         gateway_location,
@@ -103,7 +92,11 @@ async fn main() {
 
     let mut spoofer = arp::spoofer::AsyncArpSpooferImpl::new(en0_interface);
 
-    spoofer.add_entry(SpoofingEntry::new(gateway_location, inspector_location.hw, target_location)).await;
+    let spoofing_gateway_to_target = SpoofingEntry::new(gateway_location, inspector_location.hw, target_location);
+    let spoofing_target_to_gateway = SpoofingEntry::new(target_location, inspector_location.hw, gateway_location);
 
-    tokio::join!(/*inspector.start_inspecting(),*/ spoofer.start_spoofing());
+    spoofer.add_entry(spoofing_gateway_to_target).await;
+    spoofer.add_entry(spoofing_target_to_gateway).await;
+
+    tokio::join!(inspector.start_inspecting(), spoofer.start_spoofing());
 }
