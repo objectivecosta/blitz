@@ -2,19 +2,20 @@
 
 ## What is `blitz`
 
-Blitz is a firewall that works by ARP spoofing/NPD spoofing devices in your network to allow for packet inspection and filtering. 
-It is written in Rust using `tokio`, `pnet` and others.
+Blitz is a ~~firewall that works by ARP spoofing/NPD spoofing devices in your network to allow for packet inspection and filtering.~~ 
+learning project for me to become more familiar with Rust.
+It is written in Rust using `tokio`, `libpnet` and others.
 
 ## Stage
 
-This is in the proof of concept stage. DO *NOT* use it for production applications.
+This is in the proof of concept stage/hobby. DO *NOT* use it for production applications.
 
 ## Checklist
 
 ### ARP/NDP
 
 - [x] Send ARP spoofing to target devices pretending to be the router
-- [ ] Send ARP spoofing to router pretending to be the target devices
+- [x] Send ARP spoofing to router pretending to be the target devices
 - [ ] Send NDP spoofing to target devices pretending to be the router
 - [ ] Send NDP spoofing to router pretending to be the target devices
 
@@ -25,7 +26,7 @@ This is in the proof of concept stage. DO *NOT* use it for production applicatio
 - [ ] Can filter packets based on IP ranges
 - [ ] Can filter packets based on specific hostnames
 - [ ] Can filter packets based on RegEx on hostnames
-- [ ] Can create log files of traffic data
+- [ ] Can create log files of traffic data (SORTA)
 
 ### API
 
