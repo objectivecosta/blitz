@@ -1,6 +1,6 @@
 use std::{
     net::Ipv4Addr,
-    sync::{Arc, Mutex, atomic::AtomicBool},
+    sync::{atomic::AtomicBool, Arc, Mutex},
     time::Duration,
 };
 
@@ -9,17 +9,26 @@ use pnet::{
     datalink::{self, Channel, DataLinkReceiver, DataLinkSender, NetworkInterface},
     packet::{
         arp::ArpPacket,
-        ethernet::{EtherTypes, EthernetPacket}, Packet,
+        ethernet::{EtherTypes, EthernetPacket},
+        Packet,
     },
     util::MacAddr,
 };
-use tokio::{task, time::timeout, sync::mpsc::{self}};
+use tokio::{
+    sync::mpsc::{self},
+    task,
+    time::timeout,
+};
 
-use super::{network_location::NetworkLocation, packet_builder::{ArpPacketBuilder, ArpPacketBuilderImpl}};
+use super::{
+    network_location::NetworkLocation,
+    packet_builder::{ArpPacketBuilder, ArpPacketBuilderImpl},
+};
 
 #[async_trait]
 pub trait AsyncArpQueryExecutor {
     async fn query(&self, ipv4: Ipv4Addr) -> MacAddr;
+    async fn query_all(&self, subnet_mask: Ipv4Addr, base: Ipv4Addr) -> MacAddr;
 }
 
 pub struct AsyncArpQueryExecutorImpl {
@@ -31,7 +40,11 @@ impl AsyncArpQueryExecutorImpl {
     pub fn new(interface: NetworkInterface, location: NetworkLocation) -> Self {
         let cancellation_token = Arc::from(AtomicBool::new(false));
         Self {
-            _impl: Arc::from(Mutex::new(ArpQueryExecutorImpl::new(interface, location, cancellation_token.clone()))),
+            _impl: Arc::from(Mutex::new(ArpQueryExecutorImpl::new(
+                interface,
+                location,
+                cancellation_token.clone(),
+            ))),
             cancellation_token: cancellation_token,
         }
     }
@@ -39,6 +52,12 @@ impl AsyncArpQueryExecutorImpl {
 
 #[async_trait]
 impl AsyncArpQueryExecutor for AsyncArpQueryExecutorImpl {
+    async fn query_all(&self, subnet_mask: Ipv4Addr, base: Ipv4Addr) -> MacAddr {
+        println!("Subnet Mask: {}", subnet_mask.to_string());
+
+        return MacAddr::broadcast();
+    }
+
     async fn query(&self, ipv4: Ipv4Addr) -> MacAddr {
         let executor = self._impl.clone();
         let cancellation_token = self.cancellation_token.clone();
@@ -50,7 +69,7 @@ impl AsyncArpQueryExecutor for AsyncArpQueryExecutorImpl {
             return result;
         });
 
-        let timeout = timeout(Duration::from_millis(3000), future);
+        let timeout = timeout(Duration::from_millis(1000), future);
 
         let join_handle = tokio::spawn(timeout);
 
@@ -61,8 +80,9 @@ impl AsyncArpQueryExecutor for AsyncArpQueryExecutorImpl {
         if let Ok(mac_addr) = result {
             return mac_addr.unwrap();
         } else {
-            self.cancellation_token.store(true, std::sync::atomic::Ordering::Relaxed);
-            return MacAddr(0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+            self.cancellation_token
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            return MacAddr::zero();
         }
     }
 }
@@ -76,8 +96,12 @@ pub struct ArpQueryExecutorImpl {
 }
 
 impl ArpQueryExecutorImpl {
-    pub fn new(interface: NetworkInterface, location: NetworkLocation, cancellation_token: Arc<AtomicBool>) -> Self {
-      let (_, mut _abort_signal) = mpsc::channel::<u8>(16);
+    pub fn new(
+        interface: NetworkInterface,
+        location: NetworkLocation,
+        cancellation_token: Arc<AtomicBool>,
+    ) -> Self {
+        let (_, mut _abort_signal) = mpsc::channel::<u8>(16);
 
         let mut res = Self {
             interface,
@@ -105,7 +129,7 @@ impl ArpQueryExecutorImpl {
         self.sender = Some(Arc::from(Mutex::new(tx)));
         self.receiver = Some(Arc::from(Mutex::new(rx)));
     }
-    
+
     fn query(&mut self, ipv4: Ipv4Addr) -> MacAddr {
         let query_packet = self.make_query_packet(ipv4);
 
@@ -113,17 +137,17 @@ impl ArpQueryExecutorImpl {
 
         if let Some(sender) = sender.as_mut() {
             let mut sender = sender.lock().unwrap();
-            let send_opt = sender.send_to(query_packet.as_slice(), None);
+            _ = sender.send_to(query_packet.as_slice(), None);
 
-            if let Some(send_res) = send_opt {
-                if let Ok(_) = send_res {
-                    println!("Sent packet successfully!");
-                } else {
-                    println!("Failed on second part!");
-                }
-            } else {
-                println!("Failed on first part!");
-            }
+            // if let Some(send_res) = send_opt {
+            //     if let Ok(_) = send_res {
+            //         println!("Sent packet successfully!");
+            //     } else {
+            //         println!("Failed on second part!");
+            //     }
+            // } else {
+            //     println!("Failed on first part!");
+            // }
         }
 
         let mut receiver = self.receiver.clone();
@@ -131,9 +155,12 @@ impl ArpQueryExecutorImpl {
         let mut receiver = receiver.lock().unwrap();
 
         loop {
-            if self.cancellation_token.load(std::sync::atomic::Ordering::Relaxed) == true {
-              println!("Abort signal!");
-              return MacAddr(0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+            if self
+                .cancellation_token
+                .load(std::sync::atomic::Ordering::Relaxed)
+                == true
+            {
+                return MacAddr::zero()
             } else {
                 match receiver.next() {
                     Ok(packet) => {
@@ -155,10 +182,18 @@ impl ArpQueryExecutorImpl {
 
     fn make_query_packet(&self, ipv4: Ipv4Addr) -> Vec<u8> {
         let builder = ArpPacketBuilderImpl::new();
-        let target = NetworkLocation { ipv4: ipv4, hw: MacAddr::broadcast() };
+        let target = NetworkLocation {
+            ipv4: ipv4,
+            hw: MacAddr::broadcast(),
+        };
 
         let arp_request = builder.build_request(self.current_location, target);
-        let ethernet_request = builder.wrap_in_ethernet(self.current_location.hw, target.hw, EtherTypes::Arp, arp_request);
+        let ethernet_request = builder.wrap_in_ethernet(
+            self.current_location.hw,
+            target.hw,
+            EtherTypes::Arp,
+            arp_request,
+        );
 
         return ethernet_request;
     }
@@ -182,12 +217,6 @@ impl ArpQueryExecutorImpl {
 
         let sender_hw_address = arp_packet.get_sender_hw_addr();
         let sender_proto_address = arp_packet.get_sender_proto_addr();
-
-        println!(
-            "process_query_response -> {} = {}",
-            sender_hw_address.to_string(),
-            sender_proto_address.to_string()
-        );
 
         if sender_proto_address == searching_for {
             return Ok(sender_hw_address);

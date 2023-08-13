@@ -1,13 +1,14 @@
 use std::{
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH}, ptr::null,
 };
 
 use chrono::{DateTime, Utc};
+use futures::{stream::FuturesUnordered, future::join_all};
 use operating_system::network_tools::NetworkTools;
 
-use pnet::util::MacAddr;
-use tokio::task;
+use pnet::{util::MacAddr, ipnetwork::Ipv4Network};
+use tokio::{task::{self, JoinSet}, join};
 
 use crate::{
     arp::{
@@ -36,6 +37,14 @@ async fn main() {
     let en0_interface = tools.fetch_interface("en0");
     let en0_hw_addr = tools.fetch_hardware_address("en0").unwrap();
     let en0_ipv4 = tools.fetch_ipv4_address("en0").unwrap();
+    let ipv4_network = en0_interface.ips.as_slice().into_iter().find(|n| {
+        n.is_ipv4()
+    }).unwrap();
+
+    let ipv4_network: Option<Ipv4Network> = match ipv4_network {
+        pnet::ipnetwork::IpNetwork::V4(network) => Some(*network),
+        pnet::ipnetwork::IpNetwork::V6(_) => None,
+    };
 
     let now = SystemTime::now();
     let date_time: DateTime<Utc> = chrono::DateTime::from(now);
@@ -56,47 +65,76 @@ async fn main() {
     let target = TARGET_IP_OBJ; 
 
     let query = AsyncArpQueryExecutorImpl::new(en0_interface.clone(), inspector_location);
-    let target_hw_addr = query.query(target).await;
+    let query = Arc::from(tokio::sync::Mutex::new(query));
 
-    let gateway_mac_addr = query.query(gateway_ip).await;
+    let all: Vec<std::net::Ipv4Addr> = ipv4_network.unwrap().into_iter().collect();
 
-    let gateway_mac_addr_cached = query.query(gateway_ip_fetched).await;
+    // let all_ips = Vec::from();
+    // query.query_all(ipv4_network.unwrap().mask(), gateway_ip_fetched).await;
 
-    let gateway_location = NetworkLocation {
-        ipv4: gateway_ip,
-        hw: gateway_mac_addr,
-    };
+    let mut inexistent = 0;
 
-    println!(
-        "Target MacAddr: {}; Gateway Fetched: {}; Gateway Fixed: {}",
-        target_hw_addr.to_string(),
-        gateway_mac_addr,
-        gateway_mac_addr_cached
-    );
+    let abc = all.iter().map(|v| {
+        let inner = query.clone();
+        let ipv4 = v.clone();
+        return tokio::spawn(async move {
 
-    let inspector = AsyncInspectorImpl::new(
-        &en0_interface,
-        gateway_location,
-        NetworkLocation {
-            ipv4: target,
-            hw: target_hw_addr,
-        },
-        Box::new(logger),
-    );
+            let inner = inner.lock().await;
+            println!("Running IPv4: {}", ipv4.to_string());
 
-    let target_location = NetworkLocation {
-        ipv4: target,
-        hw: target_hw_addr,
-    };
+            let inner_res = inner.query(ipv4).await;
+
+            return inner_res;
+        })
+    }).collect::<FuturesUnordered<_>>();
+
+    let res: Vec<Result<MacAddr, task::JoinError>> = join_all(abc).await;
+
+    for r in res {
+        println!("MacAddr: {}", r.unwrap().to_string());
+    }
+    return;
+    // let target_hw_addr = query.query(target).await;
+
+    // let gateway_mac_addr = query.query(gateway_ip).await;
+
+    // let gateway_mac_addr_cached = query.query(gateway_ip_fetched).await;
+
+    // let gateway_location = NetworkLocation {
+    //     ipv4: gateway_ip,
+    //     hw: gateway_mac_addr,
+    // };
+
+    // println!(
+    //     "Target MacAddr: {}; Gateway Fetched: {}; Gateway Fixed: {}",
+    //     target_hw_addr.to_string(),
+    //     gateway_mac_addr,
+    //     gateway_mac_addr_cached
+    // );
+
+    // let inspector = AsyncInspectorImpl::new(
+    //     &en0_interface,
+    //     gateway_location,
+    //     NetworkLocation {
+    //         ipv4: target,
+    //         hw: target_hw_addr,
+    //     },
+    //     Box::new(logger),
+    // );
+
+    // let target_location = NetworkLocation {
+    //     ipv4: target,
+    //     hw: target_hw_addr,
+    // };
 
 
-    let mut spoofer = arp::spoofer::AsyncArpSpooferImpl::new(en0_interface);
+    // let mut spoofer = arp::spoofer::AsyncArpSpooferImpl::new(en0_interface);
 
-    let spoofing_gateway_to_target = SpoofingEntry::new(gateway_location, inspector_location.hw, target_location);
-    let spoofing_target_to_gateway = SpoofingEntry::new(target_location, inspector_location.hw, gateway_location);
+    // let spoofing_gateway_to_target = SpoofingEntry::new(gateway_location, inspector_location.hw, target_location);
+    // let spoofing_target_to_gateway = SpoofingEntry::new(target_location, inspector_location.hw, gateway_location);
 
-    spoofer.add_entry(spoofing_gateway_to_target).await;
-    spoofer.add_entry(spoofing_target_to_gateway).await;
+    // spoofer.add_entry(spoofing_gateway_to_target).await;
+    // spoofer.add_entry(spoofing_target_to_gateway).await;
 
-    tokio::join!(inspector.start_inspecting(), spoofer.start_spoofing());
+    // tokio::join!(inspector.start_inspecting(), spoofer.start_spoofing());
 }
