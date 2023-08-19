@@ -14,8 +14,7 @@ use tokio::{task::{self, JoinSet}, join};
 use crate::{
     arp::{
         network_location::NetworkLocation,
-        query::{AsyncArpQueryExecutor, AsyncArpQueryExecutorImpl},
-        spoofer::{AsyncArpSpoofer, SpoofingEntry},
+        spoofer::{AsyncArpSpoofer, SpoofingEntry}, query::async_query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor},
     },
     logger::sqlite_logger::SQLiteLogger,
     packet_inspection::inspector::{AsyncInspector, AsyncInspectorImpl}, private::{GATEWAY_IP_OBJ, TARGET_IP_OBJ, IPHONE_IP_OBJ, TARGET2_IP_OBJ},
