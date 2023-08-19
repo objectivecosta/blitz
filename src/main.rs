@@ -1,6 +1,6 @@
 use std::{
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH}, ptr::null,
+    time::{SystemTime, UNIX_EPOCH}, ptr::null, net::Ipv6Addr,
 };
 
 use chrono::{DateTime, Utc, Local};
@@ -26,6 +26,7 @@ pub mod logger;
 pub mod operating_system;
 pub mod packet_inspection;
 pub mod private;
+pub mod ndp;
 
 // TODO: (@objectivecosta) Make sure to spoof for all clients in the network when Firewall is ready.
 
@@ -110,6 +111,10 @@ async fn main() {
     spoofer.add_entry(spoofing_target_to_gateway).await;
 
     tokio::join!(inspector.start_inspecting(), spoofer.start_spoofing());
+}
+
+async fn query_ipv6(address: Ipv6Addr) {
+    let query = AsyncNdpQueryExecutorImpl::new();
 }
 
 async fn query_all(ipv4_network: &Ipv4Network, query: &AsyncArpQueryExecutorImpl) {
