@@ -68,7 +68,6 @@ async fn main() {
     let target = TARGET_IP_OBJ; 
 
     let query = AsyncArpQueryExecutorImpl::new(en0_interface.clone(), inspector_location);
-
     let target_hw_addr = query.query(target).await;
 
     let gateway_mac_addr = query.query(gateway_ip).await;
