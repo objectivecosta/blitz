@@ -83,10 +83,7 @@ async fn main() {
     let date = Local::now();
     println!("{} - Starting query multiple", date.format("[%Y-%m-%d %H:%M:%S]"));
 
-   let query_multiple = query.query_multiple(vec![
-    TARGET_IP_OBJ,
-    IPHONE_IP_OBJ,
-   ]).await;
+   let query_multiple = query.query_multiple(all).await;
 
    for key in query_multiple.keys() {
         let value = query_multiple[key];

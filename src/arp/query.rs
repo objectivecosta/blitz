@@ -1,7 +1,8 @@
 use std::{
+    collections::HashMap,
     net::Ipv4Addr,
     sync::{atomic::AtomicBool, Arc, Mutex},
-    time::Duration, collections::HashMap,
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -32,7 +33,8 @@ pub trait AsyncArpQueryExecutor {
 }
 
 pub struct AsyncArpQueryExecutorImpl {
-    _impl: Arc<Mutex<ArpQueryExecutorImpl>>,
+    _sender: Arc<Mutex<ArpQuerySenderImpl>>,
+    _listener: Arc<Mutex<ArpQueryListenerImpl>>,
     cancellation_token: Arc<AtomicBool>,
 }
 
@@ -40,8 +42,13 @@ impl AsyncArpQueryExecutorImpl {
     pub fn new(interface: NetworkInterface, location: NetworkLocation) -> Self {
         let cancellation_token = Arc::from(AtomicBool::new(false));
         Self {
-            _impl: Arc::from(Mutex::new(ArpQueryExecutorImpl::new(
-                interface,
+            _sender: Arc::from(Mutex::new(ArpQuerySenderImpl::new(
+                interface.clone(),
+                location,
+                cancellation_token.clone(),
+            ))),
+            _listener: Arc::from(Mutex::new(ArpQueryListenerImpl::new(
+                interface.clone(),
                 location,
                 cancellation_token.clone(),
             ))),
@@ -53,47 +60,51 @@ impl AsyncArpQueryExecutorImpl {
 #[async_trait]
 impl AsyncArpQueryExecutor for AsyncArpQueryExecutorImpl {
     async fn query_multiple(&self, all_ips: Vec<Ipv4Addr>) -> HashMap<Ipv4Addr, MacAddr> {
-        let executor = self._impl.clone();
+        let result_map: Arc<Mutex<HashMap<Ipv4Addr, MacAddr>>> =
+        Arc::from(Mutex::new(HashMap::new()));
         let cancellation_token = self.cancellation_token.clone();
-        let result_map: Arc<Mutex<HashMap<Ipv4Addr, MacAddr>>> = Arc::from(Mutex::new(HashMap::new()));
 
+        // Receiver
+        let listener = self._listener.clone();
+        let addresses = all_ips.clone();
         let result_clone = result_map.clone();
-        let future = task::spawn_blocking(move || {
-            let lock = executor.lock();
-            let mut executor = lock.unwrap();
+        let listener_future = task::spawn_blocking(move || {
+            let lock = listener.lock();
+            let mut listener = lock.unwrap();
 
             let result_lock = result_clone.lock();
             let mut result = result_lock.unwrap();
 
             cancellation_token.store(false, std::sync::atomic::Ordering::Relaxed);
-            let result = executor.query_multiple(all_ips, &mut result);
+            listener.listen_for(addresses.as_slice(), &mut result);
+        });
+
+        // Sender
+        let sender = self._sender.clone();
+        let sender_future = task::spawn_blocking(move || {
+            let lock = sender.lock();
+            let mut sender = lock.unwrap();
+
+            let result = sender.query_multiple(all_ips);
             return result;
         });
 
-        let timeout = timeout(Duration::from_millis(1000), future);
+        let timeout = timeout(Duration::from_millis(1000), listener_future);
         let value = tokio::spawn(timeout).await;
 
-        // let value = join_handle.await;
-
-        let result = value.unwrap();
+        // let result = value.unwrap();
 
         // This makes sure we release the lock!
-        self.cancellation_token.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.cancellation_token
+            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         // This fetches the result!
-        let abc = result_map.as_ref().lock().unwrap();
-
-        if let Ok(_) = result {
-            
-            return abc.clone();
-        } else {
-
-            return abc.clone();
-                }
+        let result = result_map.lock().unwrap();
+        return result.clone();
     }
 
     async fn query(&self, ipv4: Ipv4Addr) -> MacAddr {
-        let executor = self._impl.clone();
+        let executor = self._sender.clone();
         let cancellation_token = self.cancellation_token.clone();
         let future = task::spawn_blocking(move || {
             let lock = executor.lock();
@@ -121,15 +132,21 @@ impl AsyncArpQueryExecutor for AsyncArpQueryExecutorImpl {
     }
 }
 
-pub struct ArpQueryExecutorImpl {
+pub struct ArpQuerySenderImpl {
     interface: NetworkInterface,
     current_location: NetworkLocation,
     sender: Option<Arc<Mutex<Box<dyn DataLinkSender>>>>,
+    cancellation_token: Arc<AtomicBool>,
+}
+
+pub struct ArpQueryListenerImpl {
+    interface: NetworkInterface,
+    current_location: NetworkLocation,
     receiver: Option<Arc<Mutex<Box<dyn DataLinkReceiver>>>>,
     cancellation_token: Arc<AtomicBool>,
 }
 
-impl ArpQueryExecutorImpl {
+impl ArpQueryListenerImpl {
     pub fn new(
         interface: NetworkInterface,
         location: NetworkLocation,
@@ -140,7 +157,6 @@ impl ArpQueryExecutorImpl {
         let mut res = Self {
             interface,
             current_location: location,
-            sender: None,
             receiver: None,
             cancellation_token: cancellation_token,
         };
@@ -160,30 +176,12 @@ impl ArpQueryExecutorImpl {
             ),
         };
 
-        self.sender = Some(Arc::from(Mutex::new(tx)));
         self.receiver = Some(Arc::from(Mutex::new(rx)));
     }
 
-    fn query_multiple(&mut self, all_ips: Vec<Ipv4Addr>, result: &mut HashMap<Ipv4Addr, MacAddr>){
-        let size = all_ips.len();
-        let slice = all_ips.as_slice();
-        let query_packets: Vec<Vec<u8>> = slice.into_iter().map(|ipv4| {
-            return self.make_query_packet(*ipv4);
-        }).collect();
-
-        // let mut response_map: HashMap<Ipv4Addr, MacAddr> = HashMap::new();
-
-        let mut sender = self.sender.clone();
-
-        if let Some(sender) = sender.as_mut() {
-            let mut sender = sender.lock().unwrap();
-
-
-            for query_packet in query_packets {
-                _ = sender.send_to(query_packet.as_slice(), None);
-            }
-        }
-
+    fn listen_for(&mut self, addresses: &[Ipv4Addr], result: &mut HashMap<Ipv4Addr, MacAddr>) {
+        let size = addresses.len();
+        // let mut result: HashMap<Ipv4Addr, MacAddr> = HashMap::new();
         let mut receiver = self.receiver.clone();
         let receiver = receiver.as_mut().unwrap();
         let mut receiver = receiver.lock().unwrap();
@@ -199,7 +197,8 @@ impl ArpQueryExecutorImpl {
                 match receiver.next() {
                     Ok(packet) => {
                         let packet = EthernetPacket::new(packet).unwrap();
-                        let res = self.process_query_response(packet, &slice);
+                        let res = self.process_query_response(packet, &addresses);
+
 
                         if let Ok((ipv4, mac_addr)) = res {
                             result.insert(ipv4, mac_addr);
@@ -218,9 +217,97 @@ impl ArpQueryExecutorImpl {
         }
     }
 
+    fn process_query_response(
+        &self,
+        packet: EthernetPacket,
+        all_ips: &[Ipv4Addr],
+    ) -> Result<(Ipv4Addr, MacAddr), ()> {
+        if packet.get_ethertype() != EtherTypes::Arp {
+            return Err(());
+        }
+
+        let arp_packet = ArpPacket::new(packet.payload());
+
+        if arp_packet.is_none() {
+            return Err(());
+        }
+
+        let arp_packet = arp_packet.unwrap();
+
+        let sender_hw_address = arp_packet.get_sender_hw_addr();
+        let sender_proto_address = arp_packet.get_sender_proto_addr();
+
+        println!("Got response for {} ({})", sender_proto_address.to_string(), sender_hw_address.to_string());
+
+
+        if all_ips.contains(&sender_proto_address) {
+            return Ok((sender_proto_address, sender_hw_address));
+        } else {
+            return Err(());
+        }
+    }
+}
+
+impl ArpQuerySenderImpl {
+    pub fn new(
+        interface: NetworkInterface,
+        location: NetworkLocation,
+        cancellation_token: Arc<AtomicBool>,
+    ) -> Self {
+        let (_, mut _abort_signal) = mpsc::channel::<u8>(16);
+
+        let mut res = Self {
+            interface,
+            current_location: location,
+            sender: None,
+            cancellation_token: cancellation_token,
+        };
+
+        res.setup_socket();
+
+        return res;
+    }
+
+    fn setup_socket(&mut self) {
+        let (tx, rx) = match datalink::channel(&self.interface, Default::default()) {
+            Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
+            Ok(_) => panic!("Unhandled channel type"),
+            Err(e) => panic!(
+                "An error occurred when creating the datalink channel: {}",
+                e
+            ),
+        };
+
+        self.sender = Some(Arc::from(Mutex::new(tx)));
+    }
+
+    fn query_multiple(&mut self, all_ips: Vec<Ipv4Addr>) {
+        let slice = all_ips.as_slice();
+        let query_packets: Vec<Vec<u8>> = slice
+            .into_iter()
+            .map(|ipv4| {
+                return self.make_query_packet(*ipv4);
+            })
+            .collect();
+
+        let mut sender = self.sender.clone();
+
+        if let Some(sender) = sender.as_mut() {
+            let mut sender = sender.lock().unwrap();
+
+            for query_packet in query_packets {
+                let ethernet_packet = EthernetPacket::new(&query_packet).unwrap();
+                let arp_packet = ArpPacket::new(ethernet_packet.payload()).unwrap();
+                println!("Sending request for {}", arp_packet.get_target_proto_addr().to_string());
+
+                _ = sender.send_to(query_packet.as_slice(), None);
+            }
+        }
+    }
+
     fn query(&mut self, ipv4: Ipv4Addr) -> MacAddr {
         let mut result: HashMap<Ipv4Addr, MacAddr> = HashMap::new();
-        self.query_multiple(vec![ipv4], &mut result);
+        self.query_multiple(vec![ipv4]);
         return result[&ipv4];
     }
 
@@ -240,33 +327,5 @@ impl ArpQueryExecutorImpl {
         );
 
         return ethernet_request;
-    }
-
-    fn process_query_response(
-        &self,
-        packet: EthernetPacket,
-        all_ips: &[Ipv4Addr]
-    ) -> Result<(Ipv4Addr, MacAddr), ()> {
-        if packet.get_ethertype() != EtherTypes::Arp {
-            return Err(());
-        }
-
-        let arp_packet = ArpPacket::new(packet.payload());
-
-        if arp_packet.is_none() {
-            return Err(());
-        }
-
-        let arp_packet = arp_packet.unwrap();
-
-        let sender_hw_address = arp_packet.get_sender_hw_addr();
-        let sender_proto_address = arp_packet.get_sender_proto_addr();
-
-        if all_ips.contains(&sender_proto_address) {
-            return Ok((sender_proto_address, sender_hw_address));
-        } else {
-            return Err(())
-        }
-
     }
 }
