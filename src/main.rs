@@ -1,13 +1,14 @@
 use std::{
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH}, ptr::null,
+    time::{SystemTime, UNIX_EPOCH}, ptr::null, net::Ipv6Addr,
 };
 
 use chrono::{DateTime, Utc, Local};
 use futures::{stream::FuturesUnordered, future::join_all};
+use ndp::{query::async_query::{AsyncNdpQueryExecutorImpl, AsyncNdpQueryExecutor}};
 use operating_system::network_tools::NetworkTools;
 
-use pnet::{util::MacAddr, ipnetwork::Ipv4Network};
+use pnet::{util::MacAddr, ipnetwork::Ipv4Network, datalink::NetworkInterface};
 use private::BYPASS_LIST;
 use tokio::{task::{self, JoinSet}, join};
 
@@ -17,7 +18,7 @@ use crate::{
         spoofer::{AsyncArpSpoofer, SpoofingEntry}, query::async_query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor},
     },
     logger::sqlite_logger::SQLiteLogger,
-    packet_inspection::inspector::{AsyncInspector, AsyncInspectorImpl}, private::{GATEWAY_IP_OBJ, TARGET_IP_OBJ, IPHONE_IP_OBJ, TARGET2_IP_OBJ},
+    packet_inspection::inspector::{AsyncInspector, AsyncInspectorImpl}, private::{GATEWAY_IP_OBJ, TARGET_IP_OBJ, IPHONE_IP_OBJ, TARGET2_IP_OBJ}, ndp::network_location::V6NetworkLocation,
 };
 
 pub mod arp;
@@ -25,6 +26,7 @@ pub mod logger;
 pub mod operating_system;
 pub mod packet_inspection;
 pub mod private;
+pub mod ndp;
 
 // TODO: (@objectivecosta) Make sure to spoof for all clients in the network when Firewall is ready.
 
@@ -37,6 +39,10 @@ async fn main() {
     let en0_interface = tools.fetch_interface("en0");
     let en0_hw_addr = tools.fetch_hardware_address("en0").unwrap();
     let en0_ipv4 = tools.fetch_ipv4_address("en0").unwrap();
+
+    query_ipv6(Ipv6Addr::LOCALHOST, &en0_interface).await;
+
+    return;
 
     /* No need for this for now */
     // let ipv4_network = en0_interface.ips.as_slice().into_iter().find(|n| {
@@ -109,6 +115,15 @@ async fn main() {
     spoofer.add_entry(spoofing_target_to_gateway).await;
 
     tokio::join!(inspector.start_inspecting(), spoofer.start_spoofing());
+}
+
+async fn query_ipv6(address: Ipv6Addr, interface: &NetworkInterface) {
+    let query = AsyncNdpQueryExecutorImpl::new(interface.clone(), V6NetworkLocation {
+        ipv6: Ipv6Addr::LOCALHOST,
+        hw: interface.mac.unwrap()
+    });
+    let result = query.query(address).await;
+    println!("IPv6 Query Result: {}", result.to_string());
 }
 
 async fn query_all(ipv4_network: &Ipv4Network, query: &AsyncArpQueryExecutorImpl) {
