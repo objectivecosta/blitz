@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    net::{Ipv4Addr, Ipv6Addr},
+    net::{Ipv6Addr, Ipv6Addr},
     sync::{atomic::AtomicBool, Arc, Mutex},
     time::Duration,
 };
@@ -21,7 +21,7 @@ use tokio::{
     time::timeout,
 };
 
-use super::network_location::NetworkLocation;
+use super::network_location::V6NetworkLocation;
 
 #[async_trait]
 pub trait AsyncNdpQueryExecutor {
@@ -36,7 +36,7 @@ pub struct AsyncNdpQueryExecutorImpl {
 }
 
 impl AsyncNdpQueryExecutorImpl {
-    pub fn new(interface: NetworkInterface, location: NetworkLocation) -> Self {
+    pub fn new(interface: NetworkInterface, location: V6NetworkLocation) -> Self {
         let cancellation_token = Arc::from(AtomicBool::new(false));
         Self {
             _sender: Arc::from(Mutex::new(NdpQuerySenderImpl::new(
@@ -131,14 +131,14 @@ impl AsyncNdpQueryExecutor for AsyncNdpQueryExecutorImpl {
 
 pub struct NdpQuerySenderImpl {
     interface: NetworkInterface,
-    current_location: NetworkLocation,
+    current_location: V6NetworkLocation,
     sender: Option<Arc<Mutex<Box<dyn DataLinkSender>>>>,
     cancellation_token: Arc<AtomicBool>,
 }
 
 pub struct NdpQueryListenerImpl {
     interface: NetworkInterface,
-    current_location: NetworkLocation,
+    current_location: V6NetworkLocation,
     receiver: Option<Arc<Mutex<Box<dyn DataLinkReceiver>>>>,
     cancellation_token: Arc<AtomicBool>,
 }
@@ -146,7 +146,7 @@ pub struct NdpQueryListenerImpl {
 impl NdpQueryListenerImpl {
     pub fn new(
         interface: NetworkInterface,
-        location: NetworkLocation,
+        location: V6NetworkLocation,
         cancellation_token: Arc<AtomicBool>,
     ) -> Self {
         let (_, mut _abort_signal) = mpsc::channel::<u8>(16);
@@ -246,7 +246,7 @@ impl NdpQueryListenerImpl {
 impl NdpQuerySenderImpl {
     pub fn new(
         interface: NetworkInterface,
-        location: NetworkLocation,
+        location: V6NetworkLocation,
         cancellation_token: Arc<AtomicBool>,
     ) -> Self {
         let (_, mut _abort_signal) = mpsc::channel::<u8>(16);
@@ -300,15 +300,15 @@ impl NdpQuerySenderImpl {
         }
     }
 
-    fn query(&mut self, ipv4: Ipv4Addr) -> MacAddr {
-        let mut result: HashMap<Ipv4Addr, MacAddr> = HashMap::new();
+    fn query(&mut self, ipv4: Ipv6Addr) -> MacAddr {
+        let mut result: HashMap<Ipv6Addr, MacAddr> = HashMap::new();
         self.query_multiple(vec![ipv4]);
         return result[&ipv4];
     }
 
-    fn make_query_packet(&self, ipv4: Ipv4Addr) -> Vec<u8> {
+    fn make_query_packet(&self, ipv4: Ipv6Addr) -> Vec<u8> {
         let builder = ArpPacketBuilderImpl::new();
-        let target = NetworkLocation {
+        let target = V6NetworkLocation {
             ipv4: ipv4,
             hw: MacAddr::broadcast(),
         };

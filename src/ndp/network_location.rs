@@ -1,9 +1,9 @@
-use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 
 use pnet::util::MacAddr;
 
 #[derive(Clone, Copy)]
-pub struct NetworkLocation {
+pub struct V6NetworkLocation {
     pub ipv6: Ipv6Addr,
     pub hw: MacAddr
 }
