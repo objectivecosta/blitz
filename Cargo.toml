@@ -16,3 +16,4 @@ dns-lookup = "2.0.2"
 sqlite = "0.31.0"
 chrono = "0.4.26"
 futures = "0.3.5"
+clap = { version = "4.0", features = ["derive"] }

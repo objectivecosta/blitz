@@ -8,6 +8,7 @@ use pnet::util::MacAddr;
 use tokio::{task, join};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+use std::time::SystemTime;
 
 use crate::arp::network_location::NetworkLocation;
 use crate::logger::sqlite_logger::Logger;
@@ -19,20 +20,6 @@ use super::get_name_addr::{GetNameAddr, GetNameAddrImpl};
 pub trait AsyncInspector {
     async fn start_inspecting(&self);
 }
-
-// pub struct EthernetChannel {
-//     tx: Box<dyn DataLinkSender>,
-//     rx: Box<dyn DataLinkReceiver>,
-// }
-
-// impl EthernetChannel {
-//     pub fn new(tx: Box<dyn DataLinkSender>,
-//         rx: Box<dyn DataLinkReceiver>) -> Self {
-//             Self {
-//                 tx, rx
-//             }
-//         }
-// }
 
 pub struct AsyncInspectorImpl {
     _impl: Arc<std::sync::Mutex<InspectorImpl>>
@@ -190,6 +177,9 @@ impl InspectorImpl {
         let get_name_addr = self.get_name_addr.clone();
         let logger = self.logger.clone();
 
+        let now = SystemTime::now();
+        let timestamp: i64 = now.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs().try_into().unwrap();
+
         // Spawn logger process... this can take as much time as possible since it's async.
         tokio::spawn(async move {
             let get_name_addr_lock = get_name_addr.lock();
@@ -207,6 +197,7 @@ impl InspectorImpl {
             let destination_dns = get_name_addr.get_from_packet(&destination).await;
 
             logger.log_traffic(
+                timestamp,
                 source.to_string().as_str(),
                 source_dns.as_str(),
                 destination.to_string().as_str(),

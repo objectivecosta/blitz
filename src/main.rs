@@ -4,6 +4,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc, Local};
+use clap::Parser;
 use futures::{stream::FuturesUnordered, future::join_all};
 use operating_system::network_tools::NetworkTools;
 
@@ -26,38 +27,35 @@ pub mod operating_system;
 pub mod packet_inspection;
 pub mod private;
 
-// TODO: (@objectivecosta) Make sure to spoof for all clients in the network when Firewall is ready.
+/// Search for a pattern in a file and display the lines that contain it.
+#[derive(Parser)]
+struct BlitzParameters {
+    #[arg(short)]
+    input_interface: String,
+    #[arg(short)]
+    output_interface: String,
+}
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() {
+    // let parameters = BlitzParameters::parse();
+
     // We will spoof ARP packets saying we're the router to the client
     let tools = operating_system::network_tools::NetworkToolsImpl::new();
     let gateway_ip_fetched = tools.fetch_gateway_ip();
+
+    println!("Gateway detected: {}", gateway_ip_fetched.to_string());
 
     let en0_interface = tools.fetch_interface("en0");
     let en0_hw_addr = tools.fetch_hardware_address("en0").unwrap();
     let en0_ipv4 = tools.fetch_ipv4_address("en0").unwrap();
 
-    /* No need for this for now */
-    // let ipv4_network = en0_interface.ips.as_slice().into_iter().find(|n| {
-    //     n.is_ipv4()
-    // }).unwrap();
-
-    // let ipv4_network: Option<Ipv4Network> = match ipv4_network {
-    //     pnet::ipnetwork::IpNetwork::V4(network) => Some(*network),
-    //     pnet::ipnetwork::IpNetwork::V6(_) => None,
-    // };
-
-    let now = SystemTime::now();
-    let date_time: DateTime<Utc> = chrono::DateTime::from(now);
-    let date_time_format = "%Y-%m-%d-%H-%M-%S";
-    let formatted = date_time.format(date_time_format).to_string();
-
-    let path = format!("./db-{}.sqlite", formatted);
+    let path = format!("./db.sqlite");
     let logger = SQLiteLogger::new(path.as_str());
 
-    logger.migrate();
+    logger.setup_table();
 
+    return;
     let inspector_location = NetworkLocation {
         hw: en0_hw_addr,
         ipv4: en0_ipv4,
