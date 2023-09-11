@@ -18,7 +18,7 @@ use crate::{
         spoofer::{AsyncArpSpoofer, SpoofingEntry}, query::async_query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor},
     },
     logger::sqlite_logger::SQLiteLogger,
-    packet_inspection::inspector::{AsyncInspector, AsyncInspectorImpl}, private::{GATEWAY_IP_OBJ, TARGET_IP_OBJ, IPHONE_IP_OBJ, TARGET2_IP_OBJ},
+    packet_inspection::inspector::{AsyncInspector, InspectorImpl}, private::{GATEWAY_IP_OBJ, TARGET_IP_OBJ, IPHONE_IP_OBJ, TARGET2_IP_OBJ}, socket::socket_manager::{SocketManager, SocketManagerImpl},
 };
 
 pub mod arp;
@@ -26,6 +26,7 @@ pub mod logger;
 pub mod operating_system;
 pub mod packet_inspection;
 pub mod private;
+pub mod socket;
 
 /// Search for a pattern in a file and display the lines that contain it.
 #[derive(Parser)]
@@ -55,7 +56,13 @@ async fn main() {
 
     logger.setup_table();
 
+    let mut socket_manager = SocketManagerImpl::new(&en0_interface);
+    socket_manager.start();
+
+    println!("Got here!");
+
     return;
+
     let inspector_location = NetworkLocation {
         hw: en0_hw_addr,
         ipv4: en0_ipv4,
@@ -64,49 +71,44 @@ async fn main() {
     let gateway_ip = GATEWAY_IP_OBJ;
     let target = TARGET_IP_OBJ; 
 
-    let query = AsyncArpQueryExecutorImpl::new(en0_interface.clone(), inspector_location);
-    let target_hw_addr = query.query(target).await;
+    // let query = AsyncArpQueryExecutorImpl::new(en0_interface.clone(), inspector_location);
+    // let target_hw_addr = query.query(target).await;
 
-    let gateway_mac_addr = query.query(gateway_ip).await;
+    // let gateway_mac_addr = query.query(gateway_ip).await;
 
-    let gateway_mac_addr_cached = query.query(gateway_ip_fetched).await;
+    // let gateway_mac_addr_cached = query.query(gateway_ip_fetched).await;
 
-    let gateway_location = NetworkLocation {
-        ipv4: gateway_ip,
-        hw: gateway_mac_addr,
-    };
+    // let gateway_location = NetworkLocation {
+    //     ipv4: gateway_ip,
+    //     hw: gateway_mac_addr,
+    // };
 
-    println!(
-        "Target MacAddr: {}; Gateway Fetched: {}; Gateway Fixed: {}",
-        target_hw_addr.to_string(),
-        gateway_mac_addr,
-        gateway_mac_addr_cached
-    );
+    // println!(
+    //     "Target MacAddr: {}; Gateway Fetched: {}; Gateway Fixed: {}",
+    //     target_hw_addr.to_string(),
+    //     gateway_mac_addr,
+    //     gateway_mac_addr_cached
+    // );
 
-    let inspector = AsyncInspectorImpl::new(
-        &en0_interface,
-        gateway_location,
-        NetworkLocation {
-            ipv4: target,
-            hw: target_hw_addr,
-        },
+    let inspector = InspectorImpl::new(
+        socket_manager.acquire_read(),
         Box::new(logger),
     );
 
-    let target_location = NetworkLocation {
-        ipv4: target,
-        hw: target_hw_addr,
-    };
+    // let target_location = NetworkLocation {
+    //     ipv4: target,
+    //     hw: target_hw_addr,
+    // };
 
-    let mut spoofer = arp::spoofer::AsyncArpSpooferImpl::new(en0_interface);
+    // let mut spoofer = arp::spoofer::AsyncArpSpooferImpl::new(en0_interface);
 
-    let spoofing_gateway_to_target = SpoofingEntry::new(gateway_location, inspector_location.hw, target_location);
-    let spoofing_target_to_gateway = SpoofingEntry::new(target_location, inspector_location.hw, gateway_location);
+    // let spoofing_gateway_to_target = SpoofingEntry::new(gateway_location, inspector_location.hw, target_location);
+    // let spoofing_target_to_gateway = SpoofingEntry::new(target_location, inspector_location.hw, gateway_location);
 
-    spoofer.add_entry(spoofing_gateway_to_target).await;
-    spoofer.add_entry(spoofing_target_to_gateway).await;
+    // spoofer.add_entry(spoofing_gateway_to_target).await;
+    // spoofer.add_entry(spoofing_target_to_gateway).await;
 
-    tokio::join!(inspector.start_inspecting(), spoofer.start_spoofing());
+    tokio::join!(inspector.start_inspecting());
 }
 
 async fn query_all(ipv4_network: &Ipv4Network, query: &AsyncArpQueryExecutorImpl) {
