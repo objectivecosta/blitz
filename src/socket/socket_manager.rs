@@ -7,7 +7,6 @@ use pnet::{
 use tokio::sync::{watch, Mutex};
 
 use super::{async_socket_manager::AsyncSocketManagerImpl, ethernet_packet_wrapper::EthernetPacketWrapper};
-
 pub trait SocketManager {
     fn acquire_read(&self) -> watch::Receiver<EthernetPacketWrapper>;
 }
