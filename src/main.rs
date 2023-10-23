@@ -15,10 +15,10 @@ use tokio::{task::{self, JoinSet}, join};
 use crate::{
     arp::{
         network_location::NetworkLocation,
-        spoofer::{AsyncArpSpoofer, SpoofingEntry}, query::async_query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor},
+        spoofer::{SpoofingEntry}, query::async_query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor},
     },
     logger::sqlite_logger::SQLiteLogger,
-    packet_inspection::inspector::{AsyncInspector, InspectorImpl}, private::{GATEWAY_IP_OBJ, TARGET_IP_OBJ, IPHONE_IP_OBJ, TARGET2_IP_OBJ}, socket::socket_manager::{SocketManager, SocketManagerImpl},
+    packet_inspection::inspector::{AsyncInspector, InspectorImpl}, private::{GATEWAY_IP_OBJ, TARGET_IP_OBJ}, socket::socket_manager_async::{AsyncSocketManagerImpl, SocketManager},
 };
 
 pub mod arp;
@@ -56,7 +56,7 @@ async fn main() {
 
     logger.setup_table();
 
-    let mut socket_manager = SocketManagerImpl::new(&en0_interface);
+    let mut socket_manager = AsyncSocketManagerImpl::new(&en0_interface);
     socket_manager.start();
 
     println!("Got here!");

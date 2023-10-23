@@ -15,7 +15,7 @@ use crate::arp::network_location::NetworkLocation;
 use crate::logger::sqlite_logger::Logger;
 use crate::private::SELF_IP_OBJ;
 use crate::socket::ethernet_packet_wrapper::EthernetPacketWrapper;
-use crate::socket::socket_manager::{self, SocketManager};
+use crate::socket::socket_manager_async::AsyncSocketManagerImpl;
 
 use super::get_name_addr::{GetNameAddr, GetNameAddrImpl};
 
