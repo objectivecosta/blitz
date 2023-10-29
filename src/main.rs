@@ -7,7 +7,6 @@ use crate::{operating_system::network_tools::NetworkToolsImpl, logger::sqlite_lo
 pub mod logger;
 pub mod operating_system;
 pub mod packet_inspection;
-pub mod private;
 pub mod socket;
 pub mod forwarder;
 
@@ -28,10 +27,10 @@ async fn main() {
     let output_interface_name = parameters.input_interface.as_str();
     
     let input_interface = network_tools.fetch_interface(input_interface_name);
-    let input_hw_address = network_tools.fetch_hardware_address(input_interface_name).unwrap();
+    let _input_hw_address = network_tools.fetch_hardware_address(input_interface_name).unwrap();
     
     let output_interface = network_tools.fetch_interface(output_interface_name);
-    let output_hw_address = network_tools.fetch_hardware_address(output_interface_name).unwrap();
+    let _output_hw_address = network_tools.fetch_hardware_address(output_interface_name).unwrap();
 
     let path = format!("./db.sqlite");
     let logger = SQLiteLogger::new(path.as_str());

@@ -1,20 +1,12 @@
 use async_trait::async_trait;
-use pnet::datalink::Channel::{self};
-use pnet::datalink::{self, NetworkInterface, DataLinkSender, DataLinkReceiver};
-use pnet::packet::ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket};
+use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::Packet;
-use pnet::util::MacAddr;
-use tokio::sync::watch;
-use tokio::{task, join};
 use std::sync::Arc;
-use std::thread::JoinHandle;
 use std::time::SystemTime;
 
 use crate::logger::sqlite_logger::Logger;
-use crate::private::SELF_IP_OBJ;
-use crate::socket::socket_manager::{self, SocketManager};
-use crate::socket::socket_reader::SocketReader;
+use crate::socket::socket_manager::SocketManager;
 
 use super::get_name_addr::{GetNameAddr, GetNameAddrImpl};
 
@@ -36,7 +28,7 @@ pub struct InspectorImpl<'a> {
 
 impl<'a> InspectorImpl<'a> {
     pub fn new(socket_manager: &'a SocketManager, logger: Box<dyn Logger + Send>) -> Self {
-        let mut result = Self {
+        let result = Self {
             socket_manager: socket_manager,
             get_name_addr: Arc::from(tokio::sync::Mutex::new(GetNameAddrImpl::new())),
             logger: Arc::from(tokio::sync::Mutex::new(logger))
@@ -70,11 +62,12 @@ impl InspectorImpl<'_> {
                 println!("Received new IPv6 packet; Ethernet properties => src='{}';target='{}'", src, tgt);
             }
             EtherTypes::Arp => {
-                // println!("Received new Arp packet; Ethernet properties => src='{}';target='{}'", src, tgt);
+                let packet_type = packet.get_ethertype().to_string();
+                println!("Received new Arp packet src='{}';target='{}';type='{}'", src, tgt, packet_type);
             }
             default => {
                 let packet_type = packet.get_ethertype().to_string();
-                println!("Received new Ethernet packet src='{}';target='{}';type='{}'", src, tgt, packet_type);
+                println!("Received new Ethernet ({}) packet src='{}';target='{}';type='{}'", default.to_string(), src, tgt, packet_type);
             }
         }
     }

@@ -1,5 +1,4 @@
-use pnet::datalink::{self, Channel, DataLinkReceiver, DataLinkSender, NetworkInterface};
-use tokio::sync::watch::{self, Sender};
+use pnet::datalink::NetworkInterface;
 
 use super::{datalink_provider::DataLinkProvider, socket_reader::SocketReader, socket_writer::SocketWriter, ethernet_packet_vector::EthernetPacketVector};
 

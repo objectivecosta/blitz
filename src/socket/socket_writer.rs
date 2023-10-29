@@ -10,7 +10,7 @@ pub struct SocketWriter {
 
 impl SocketWriter {
     pub fn new(tx: Box<dyn DataLinkSender>) -> Self {
-        let mut writer = SocketWriter {
+        let writer = SocketWriter {
             tx: Arc::from(Mutex::new(tx))
         };
 
