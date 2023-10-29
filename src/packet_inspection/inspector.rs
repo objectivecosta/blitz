@@ -11,7 +11,6 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::SystemTime;
 
-use crate::arp::network_location::NetworkLocation;
 use crate::logger::sqlite_logger::Logger;
 use crate::private::SELF_IP_OBJ;
 use crate::socket::socket_manager::{self, SocketManager};

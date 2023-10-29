@@ -2,9 +2,8 @@
 use clap::Parser;
 use operating_system::network_tools::NetworkTools;
 
-use crate::{operating_system::network_tools::NetworkToolsImpl, logger::sqlite_logger::SQLiteLogger, socket::socket_manager::SocketManager, packet_inspection::inspector::{InspectorImpl, Inspector}, arp::spoofer::SpoofingEntry, forwarder::forwarder::Forwarder};
+use crate::{operating_system::network_tools::NetworkToolsImpl, logger::sqlite_logger::SQLiteLogger, socket::socket_manager::SocketManager, packet_inspection::inspector::{InspectorImpl, Inspector}, forwarder::forwarder::Forwarder};
 
-pub mod arp;
 pub mod logger;
 pub mod operating_system;
 pub mod packet_inspection;
