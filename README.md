@@ -14,9 +14,9 @@ This is in the proof of concept stage/hobby. DO *NOT* use it for production appl
 
 ### ARP/~~NDP~~
 
-- [x] Send ARP spoofing to target devices pretending to be the router
-- [x] Send ARP spoofing to router pretending to be the target devices
-- [x] Can perform ARP queries
+- [x] ~~Send ARP spoofing to target devices pretending to be the router~~
+- [x] ~~Send ARP spoofing to router pretending to be the target devices~~
+- [x] ~~Can perform ARP queries~~
 - [ ] ~~Send NDP spoofing to target devices pretending to be the router~~
 - [ ] ~~Send NDP spoofing to router pretending to be the target devices~~
 
