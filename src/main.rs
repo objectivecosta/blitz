@@ -1,21 +1,14 @@
-use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH}, ptr::null,
-};
 
-use chrono::{DateTime, Utc, Local};
+use chrono::Local;
 use clap::Parser;
-use futures::{stream::FuturesUnordered, future::join_all};
 use operating_system::network_tools::NetworkTools;
 
-use pnet::{util::MacAddr, ipnetwork::Ipv4Network};
-use private::BYPASS_LIST;
-use tokio::{task::{self, JoinSet}, join};
+use pnet::ipnetwork::Ipv4Network;
 
 use crate::{
     arp::{
         network_location::NetworkLocation,
-        spoofer::{SpoofingEntry}, query::async_query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor},
+        spoofer::SpoofingEntry, query::async_query::{AsyncArpQueryExecutorImpl, AsyncArpQueryExecutor},
     },
     logger::sqlite_logger::SQLiteLogger,
     packet_inspection::inspector::{AsyncInspector, InspectorImpl}, private::{GATEWAY_IP_OBJ, TARGET_IP_OBJ}, socket::socket_manager_async::{AsyncSocketManagerImpl, SocketManager},
