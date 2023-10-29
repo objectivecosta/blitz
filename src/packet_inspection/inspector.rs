@@ -28,15 +28,15 @@ pub trait Inspector {
 //     _impl: Arc<std::sync::Mutex<InspectorImpl>>
 // }
 
-pub struct InspectorImpl {
-    socket_manager: SocketManager,
+pub struct InspectorImpl<'a> {
+    socket_manager: &'a SocketManager,
     get_name_addr: Arc<tokio::sync::Mutex<dyn GetNameAddr + Send>>,
     logger: Arc<tokio::sync::Mutex<Box<dyn Logger + Send>>>
 }
 
 
-impl InspectorImpl {
-    pub fn new(socket_manager: SocketManager, logger: Box<dyn Logger + Send>) -> Self {
+impl<'a> InspectorImpl<'a> {
+    pub fn new(socket_manager: &'a SocketManager, logger: Box<dyn Logger + Send>) -> Self {
         let mut result = Self {
             socket_manager: socket_manager,
             get_name_addr: Arc::from(tokio::sync::Mutex::new(GetNameAddrImpl::new())),
@@ -49,15 +49,16 @@ impl InspectorImpl {
 
 
 #[async_trait]
-impl Inspector for InspectorImpl {
+impl Inspector for InspectorImpl<'_> {
     async fn start_inspecting(&mut self) {
-        while let packet_vector = self.socket_manager.recv().await {
+        loop {
+            let packet_vector = self.socket_manager.recv().await;
             self.process_ethernet_packet(packet_vector.to_packet());
         }
     }
 }
 
-impl InspectorImpl {
+impl InspectorImpl<'_> {
     fn process_ethernet_packet(&self, packet: EthernetPacket) {
         let src = packet.get_source().to_string();
         let tgt = packet.get_destination().to_string();
@@ -67,7 +68,7 @@ impl InspectorImpl {
                 self.process_ipv4_packet(packet.packet());
             }
             EtherTypes::Ipv6 => {
-                // println!("Received new IPv6 packet; Ethernet properties => src='{}';target='{}'", src, tgt);
+                println!("Received new IPv6 packet; Ethernet properties => src='{}';target='{}'", src, tgt);
             }
             EtherTypes::Arp => {
                 // println!("Received new Arp packet; Ethernet properties => src='{}';target='{}'", src, tgt);

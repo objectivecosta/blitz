@@ -17,7 +17,7 @@ impl SocketWriter {
         return writer;
     }
 
-    pub async fn send(&mut self, packet: EthernetPacketVector) -> bool {
+    pub async fn send(&self, packet: EthernetPacketVector) -> bool {
         let tx = self.tx.clone();
         let result = tokio::task::spawn_blocking(move || {
             let mut locked = tx.lock().unwrap();

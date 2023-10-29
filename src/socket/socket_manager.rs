@@ -19,11 +19,11 @@ impl SocketManager {
         return socket_manager;
     }
 
-    pub async fn recv(&mut self) -> EthernetPacketVector {
+    pub async fn recv(&self) -> EthernetPacketVector {
         return self.reader.recv().await;
     }
 
-    pub async fn send(&mut self, packet: EthernetPacketVector) -> bool {
+    pub async fn send(&self, packet: EthernetPacketVector) -> bool {
         return self.writer.send(packet).await;
     }
 }

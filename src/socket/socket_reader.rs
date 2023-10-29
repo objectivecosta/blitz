@@ -25,9 +25,10 @@ impl SocketReader {
         return reader;
     }
 
-    pub async fn recv(&mut self) -> EthernetPacketVector {
-        let _ = self.receiver.changed().await;
-        return (*self.receiver.borrow()).copy();
+    pub async fn recv(&self) -> EthernetPacketVector {
+        let mut clone = self.receiver.clone();
+        let _ = clone.changed().await;
+        return (*clone.borrow()).copy();
     }
 
     pub fn start(&mut self) {
