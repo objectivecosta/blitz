@@ -1,9 +1,9 @@
 use pnet::datalink::{self, Channel, DataLinkReceiver, DataLinkSender, NetworkInterface};
 use tokio::sync::watch::{self, Sender};
 
-use super::{datalink_provider::DataLinkProvider, socket_reader::SocketReader, socket_writer::SocketWriter};
+use super::{datalink_provider::DataLinkProvider, socket_reader::SocketReader, socket_writer::SocketWriter, ethernet_packet_vector::EthernetPacketVector};
 
-pub(super) struct SocketManager {
+pub struct SocketManager {
     reader: SocketReader,
     writer: SocketWriter,
 }
@@ -17,5 +17,13 @@ impl SocketManager {
         };
 
         return socket_manager;
+    }
+
+    pub async fn recv(&mut self) -> EthernetPacketVector {
+        return self.reader.recv().await;
+    }
+
+    pub async fn send(&mut self, packet: EthernetPacketVector) -> bool {
+        return self.writer.send(packet).await;
     }
 }

@@ -14,14 +14,14 @@ use std::time::SystemTime;
 use crate::arp::network_location::NetworkLocation;
 use crate::logger::sqlite_logger::Logger;
 use crate::private::SELF_IP_OBJ;
-use crate::socket::ethernet_packet_wrapper::EthernetPacketWrapper;
-use crate::socket::socket_manager_async::AsyncSocketManagerImpl;
+use crate::socket::socket_manager::{self, SocketManager};
+use crate::socket::socket_reader::SocketReader;
 
 use super::get_name_addr::{GetNameAddr, GetNameAddrImpl};
 
 #[async_trait]
-pub trait AsyncInspector {
-    async fn start_inspecting(&self);
+pub trait Inspector {
+    async fn start_inspecting(&mut self);
 }
 
 // pub struct AsyncInspectorImpl {
@@ -29,63 +29,30 @@ pub trait AsyncInspector {
 // }
 
 pub struct InspectorImpl {
-    packet_receiver: watch::Receiver<EthernetPacketWrapper>,
+    socket_manager: SocketManager,
     get_name_addr: Arc<tokio::sync::Mutex<dyn GetNameAddr + Send>>,
     logger: Arc<tokio::sync::Mutex<Box<dyn Logger + Send>>>
 }
 
-// impl AsyncInspectorImpl {
-//     pub fn new(interface: &NetworkInterface, gateway_location: NetworkLocation, target_location: NetworkLocation, logger: Box<dyn Logger + Send>) -> Self {
-//         Self {
-//             _impl: Arc::from(std::sync::Mutex::new(InspectorImpl::new(interface, gateway_location, target_location, logger)))
-//         }
-//     }
-// }
 
 impl InspectorImpl {
-    pub fn new(packet_receiver: watch::Receiver<EthernetPacketWrapper>, logger: Box<dyn Logger + Send>) -> Self {
+    pub fn new(socket_manager: SocketManager, logger: Box<dyn Logger + Send>) -> Self {
         let mut result = Self {
-            packet_receiver: packet_receiver,
+            socket_manager: socket_manager,
             get_name_addr: Arc::from(tokio::sync::Mutex::new(GetNameAddrImpl::new())),
             logger: Arc::from(tokio::sync::Mutex::new(logger))
         };
 
-        // result.setup_socket();
-
         return result;
-    }
-
-    fn setup_socket(interface: &NetworkInterface) -> (Box<dyn DataLinkSender>, Box<dyn DataLinkReceiver>) {
-        let channel = match datalink::channel(&interface, Default::default()) {
-            Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
-            Ok(_) => panic!("Unhandled channel type"),
-            Err(e) => panic!("An error occurred when creating the datalink channel: {}", e)
-        };
-
-        return channel;
     }
 }
 
-// #[async_trait]
-// impl AsyncInspector for AsyncInspectorImpl {
-//     async fn start_inspecting(&self) {
-//         let executor = self._impl.clone();
-//         let _ = task::spawn_blocking(move || {
-//             let executor_lock = executor.lock();
-//             let mut executor = executor_lock.unwrap();
-//             executor.start_inspecting();
-//         }).await;
-//     }
-// }
 
 #[async_trait]
-impl AsyncInspector for InspectorImpl {
-    async fn start_inspecting(&self) {
-        let mut rx = self.packet_receiver.clone();
-        while rx.changed().await.is_ok() {
-            let value = rx.borrow();
-            let packet = value.to_packet();
-            self.process_ethernet_packet(packet);
+impl Inspector for InspectorImpl {
+    async fn start_inspecting(&mut self) {
+        while let packet_vector = self.socket_manager.recv().await {
+            self.process_ethernet_packet(packet_vector.to_packet());
         }
     }
 }
