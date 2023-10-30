@@ -11,7 +11,7 @@ pub struct SocketWriter {
 impl SocketWriter {
     pub fn new(tx: Box<dyn DataLinkSender>) -> Self {
         let writer = SocketWriter {
-            tx: Arc::from(Mutex::new(tx))
+            tx: Arc::from(Mutex::new(tx)),
         };
 
         return writer;
@@ -22,7 +22,8 @@ impl SocketWriter {
         let result = tokio::task::spawn_blocking(move || {
             let mut locked = tx.lock().unwrap();
             return locked.send_to(packet.to_slice(), None);
-        }).await;
+        })
+        .await;
 
         match result {
             Ok(_) => return true,

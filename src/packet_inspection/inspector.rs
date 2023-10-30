@@ -22,22 +22,20 @@ pub trait Inspector {
 pub struct InspectorImpl<'a> {
     socket_manager: &'a SocketManager,
     get_name_addr: Arc<tokio::sync::Mutex<dyn GetNameAddr + Send>>,
-    logger: Arc<tokio::sync::Mutex<Box<dyn Logger + Send>>>
+    logger: Arc<tokio::sync::Mutex<Box<dyn Logger + Send>>>,
 }
-
 
 impl<'a> InspectorImpl<'a> {
     pub fn new(socket_manager: &'a SocketManager, logger: Box<dyn Logger + Send>) -> Self {
         let result = Self {
             socket_manager: socket_manager,
             get_name_addr: Arc::from(tokio::sync::Mutex::new(GetNameAddrImpl::new())),
-            logger: Arc::from(tokio::sync::Mutex::new(logger))
+            logger: Arc::from(tokio::sync::Mutex::new(logger)),
         };
 
         return result;
     }
 }
-
 
 #[async_trait]
 impl Inspector for InspectorImpl<'_> {
@@ -59,15 +57,27 @@ impl InspectorImpl<'_> {
                 self.process_ipv4_packet(packet.packet());
             }
             EtherTypes::Ipv6 => {
-                println!("Received new IPv6 packet; Ethernet properties => src='{}';target='{}'", src, tgt);
+                println!(
+                    "Received new IPv6 packet; Ethernet properties => src='{}';target='{}'",
+                    src, tgt
+                );
             }
             EtherTypes::Arp => {
                 let packet_type = packet.get_ethertype().to_string();
-                println!("Received new Arp packet src='{}';target='{}';type='{}'", src, tgt, packet_type);
+                println!(
+                    "Received new Arp packet src='{}';target='{}';type='{}'",
+                    src, tgt, packet_type
+                );
             }
             default => {
                 let packet_type = packet.get_ethertype().to_string();
-                println!("Received new Ethernet ({}) packet src='{}';target='{}';type='{}'", default.to_string(), src, tgt, packet_type);
+                println!(
+                    "Received new Ethernet ({}) packet src='{}';target='{}';type='{}'",
+                    default.to_string(),
+                    src,
+                    tgt,
+                    packet_type
+                );
             }
         }
     }
@@ -76,7 +86,11 @@ impl InspectorImpl<'_> {
         let ethernet_packet = EthernetPacket::new(packet.clone()).unwrap();
         let ipv4_packet = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
 
-        println!("Processing IPv4 packet! src='{}';target='{}';", ipv4_packet.get_source().to_string(), ipv4_packet.get_destination().to_string());
+        println!(
+            "Processing IPv4 packet! src='{}';target='{}';",
+            ipv4_packet.get_source().to_string(),
+            ipv4_packet.get_destination().to_string()
+        );
 
         let moved_packet = ipv4_packet.packet().to_owned();
 
@@ -84,7 +98,12 @@ impl InspectorImpl<'_> {
         let logger = self.logger.clone();
 
         let now = SystemTime::now();
-        let timestamp: i64 = now.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs().try_into().unwrap();
+        let timestamp: i64 = now
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .try_into()
+            .unwrap();
 
         // Spawn logger process... this can take as much time as possible since it's async.
         tokio::spawn(async move {
@@ -94,13 +113,14 @@ impl InspectorImpl<'_> {
             let logger_lock = logger.lock();
             let logger = logger_lock.await;
 
-            let packet: Ipv4Packet<'_> = Ipv4Packet::new(&moved_packet).unwrap();
+            // let packet: Ipv4Packet<'_> = Ipv4Packet::new(&moved_packet).unwrap();
+            let packet: Ipv4Packet = Ipv4Packet::new(&moved_packet).unwrap();
 
             let source = packet.get_source();
             let destination = packet.get_destination();
 
-            let source_dns = get_name_addr.get_from_packet(&source).await;
-            let destination_dns = get_name_addr.get_from_packet(&destination).await;
+            let source_dns = get_name_addr.get_from_address(&source).await;
+            let destination_dns = get_name_addr.get_from_address(&destination).await;
 
             logger.log_traffic(
                 timestamp,

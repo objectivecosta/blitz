@@ -1,6 +1,9 @@
 use pnet::datalink::NetworkInterface;
 
-use super::{datalink_provider::DataLinkProvider, socket_reader::SocketReader, socket_writer::SocketWriter, ethernet_packet_vector::EthernetPacketVector};
+use super::{
+    datalink_provider::DataLinkProvider, ethernet_packet_vector::EthernetPacketVector,
+    socket_reader::SocketReader, socket_writer::SocketWriter,
+};
 
 pub struct SocketManager {
     reader: SocketReader,
@@ -12,7 +15,7 @@ impl SocketManager {
         let (ethernet_tx, ethernet_rx) = (DataLinkProvider {}).provide(network_interface);
         let socket_manager = SocketManager {
             reader: SocketReader::new(ethernet_rx),
-            writer: SocketWriter::new(ethernet_tx)
+            writer: SocketWriter::new(ethernet_tx),
         };
 
         return socket_manager;
