@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::Packet;
@@ -6,49 +5,36 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use crate::logger::sqlite_logger::Logger;
-use crate::socket::socket_manager::SocketManager;
 
 use super::get_name_addr::{GetNameAddr, GetNameAddrImpl};
 
-#[async_trait]
-pub trait Inspector {
-    async fn start_inspecting(&mut self);
-}
+// #[async_trait]
+// pub trait Inspector {
+//     async fn start_inspecting(&mut self);
+// }
 
 // pub struct AsyncInspectorImpl {
 //     _impl: Arc<std::sync::Mutex<InspectorImpl>>
 // }
 
-pub struct InspectorImpl<'a> {
-    socket_manager: &'a SocketManager,
+pub struct InspectorImpl {
     get_name_addr: Arc<tokio::sync::Mutex<dyn GetNameAddr + Send>>,
     logger: Arc<tokio::sync::Mutex<Box<dyn Logger + Send>>>,
 }
 
-impl<'a> InspectorImpl<'a> {
-    pub fn new(socket_manager: &'a SocketManager, logger: Box<dyn Logger + Send>) -> Self {
-        let result = Self {
-            socket_manager: socket_manager,
+impl InspectorImpl {
+    pub fn new(logger: Arc<tokio::sync::Mutex<Box<dyn Logger + Send>>>) -> Self {
+        let result: InspectorImpl = Self {
             get_name_addr: Arc::from(tokio::sync::Mutex::new(GetNameAddrImpl::new())),
-            logger: Arc::from(tokio::sync::Mutex::new(logger)),
+            logger: logger,
         };
 
         return result;
     }
 }
 
-#[async_trait]
-impl Inspector for InspectorImpl<'_> {
-    async fn start_inspecting(&mut self) {
-        loop {
-            let packet_vector = self.socket_manager.recv().await;
-            self.process_ethernet_packet(packet_vector.to_packet());
-        }
-    }
-}
-
-impl InspectorImpl<'_> {
-    fn process_ethernet_packet(&self, packet: EthernetPacket) {
+impl InspectorImpl {
+    pub fn process_ethernet_packet(&self, packet: &EthernetPacket) {
         let src = packet.get_source().to_string();
         let tgt = packet.get_destination().to_string();
 
@@ -113,7 +99,6 @@ impl InspectorImpl<'_> {
             let logger_lock = logger.lock();
             let logger = logger_lock.await;
 
-            // let packet: Ipv4Packet<'_> = Ipv4Packet::new(&moved_packet).unwrap();
             let packet: Ipv4Packet = Ipv4Packet::new(&moved_packet).unwrap();
 
             let source = packet.get_source();

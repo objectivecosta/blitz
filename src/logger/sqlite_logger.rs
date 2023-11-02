@@ -59,8 +59,6 @@ impl SQLiteLogger {
 
         while let Ok(State::Row) = statement.next() {
             let value = statement.read::<i64, _>("total").unwrap();
-            println!("total = {}", value);
-
             last_total = value;
         }
 

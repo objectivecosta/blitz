@@ -19,6 +19,10 @@ impl EthernetPacketVector {
         }
     }
 
+    pub fn size(&self) -> usize {
+        return self.data.len();
+    }
+
     pub fn to_packet(&self) -> EthernetPacket {
         return EthernetPacket::new(&self.data.as_slice()).unwrap();
     }

@@ -1,14 +1,16 @@
 
+use std::sync::Arc;
+
 use clap::Parser;
+use logger::sqlite_logger::Logger;
 use operating_system::network_tools::NetworkTools;
 
-use crate::{operating_system::network_tools::NetworkToolsImpl, logger::sqlite_logger::SQLiteLogger, socket::socket_manager::SocketManager, packet_inspection::inspector::{InspectorImpl, Inspector}, forwarder::forwarder::Forwarder};
+use crate::{operating_system::network_tools::NetworkToolsImpl, logger::sqlite_logger::SQLiteLogger, socket::socket_manager::SocketManager, packet_inspection::inspector::InspectorImpl};
 
 pub mod logger;
 pub mod operating_system;
 pub mod packet_inspection;
 pub mod socket;
-pub mod forwarder;
 
 /// Search for a pattern in a file and display the lines that contain it.
 #[derive(Parser)]
@@ -40,11 +42,32 @@ async fn main() {
     let input_manager: SocketManager = SocketManager::new(&input_interface);
     let output_manager: SocketManager = SocketManager::new(&output_interface);
 
-    let mut inspector = InspectorImpl::new(&input_manager, Box::new(logger));
-    let inspector_future = inspector.start_inspecting();
+    let logger: Box<dyn Logger + Send> = Box::from(logger);
+    let shared_logger = Arc::from(tokio::sync::Mutex::new(logger));
 
-    let forwarder = Forwarder::new(&input_manager, &output_manager);
-    let forwader_future = forwarder.start_forwarding();
+    let input_inspector = InspectorImpl::new(shared_logger.clone());
+    let output_inspector = InspectorImpl::new(shared_logger.clone());
 
-    tokio::join!(inspector_future, forwader_future);
+    let mut input_to_output_receiver = input_manager.receiver();
+    let mut output_to_input_receiver = output_manager.receiver();
+
+    let input_to_output = tokio::task::spawn(async move {
+        loop {
+            let _ = input_to_output_receiver.changed().await;
+            let packet = (*input_to_output_receiver.borrow()).to_owned();
+            input_inspector.process_ethernet_packet(&packet.to_packet());
+            output_manager.send(&packet).await;
+        }
+    });
+
+    let output_to_input = tokio::task::spawn(async move {
+        loop {
+            let _ = output_to_input_receiver.changed().await;
+            let packet = (*output_to_input_receiver.borrow()).to_owned();
+            output_inspector.process_ethernet_packet(&packet.to_packet());
+            input_manager.send(&packet).await;
+        }
+    });
+
+    let _ = tokio::join!(input_to_output, output_to_input);
 }

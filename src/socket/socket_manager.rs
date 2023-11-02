@@ -1,4 +1,5 @@
 use pnet::datalink::NetworkInterface;
+use tokio::sync::watch;
 
 use super::{
     datalink_provider::DataLinkProvider, ethernet_packet_vector::EthernetPacketVector,
@@ -18,6 +19,8 @@ impl SocketManager {
             writer: SocketWriter::new(ethernet_tx),
         };
 
+        socket_manager.reader.start();
+
         return socket_manager;
     }
 
@@ -25,7 +28,11 @@ impl SocketManager {
         return self.reader.recv().await;
     }
 
-    pub async fn send(&self, packet: EthernetPacketVector) -> bool {
+    pub fn receiver(&self) -> watch::Receiver<EthernetPacketVector> {
+        return self.reader.receiver();
+    }
+
+    pub async fn send(&self, packet: &EthernetPacketVector) -> bool {
         return self.writer.send(packet).await;
     }
 }

@@ -17,17 +17,23 @@ impl SocketWriter {
         return writer;
     }
 
-    pub async fn send(&self, packet: EthernetPacketVector) -> bool {
+    pub async fn send(&self, packet: &EthernetPacketVector) -> bool {
+        let packet = packet.copy();
+        let size = packet.size();
         let tx = self.tx.clone();
-        let result = tokio::task::spawn_blocking(move || {
+        let task = tokio::task::spawn_blocking(move || {
             let mut locked = tx.lock().unwrap();
-            return locked.send_to(packet.to_slice(), None);
-        })
-        .await;
+            let result = locked.send_to(packet.to_slice(), None).unwrap();
+            return result;
+        });
 
-        match result {
-            Ok(_) => return true,
-            Err(_) => return false,
-        }
+        let final_result = match task.await {
+            Ok(_) => true,
+            Err(_) => false,
+        };
+
+        println!("Sending packet of size: {}", size);
+
+        return final_result;
     }
 }

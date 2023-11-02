@@ -14,13 +14,11 @@ pub struct SocketReader {
 impl SocketReader {
     pub fn new(rx: Box<dyn DataLinkReceiver>) -> Self {
         let channel = tokio::sync::watch::channel(EthernetPacketVector::new(vec![].as_slice()));
-        let mut reader = SocketReader {
+        let reader: SocketReader = SocketReader {
             rx: Arc::from(Mutex::new(rx)),
             sender: Arc::from(Mutex::new(channel.0)),
             receiver: channel.1,
         };
-
-        reader.start();
 
         return reader;
     }
@@ -31,7 +29,11 @@ impl SocketReader {
         return (*clone.borrow()).copy();
     }
 
-    pub fn start(&mut self) {
+    pub fn receiver(&self) -> watch::Receiver<EthernetPacketVector> {
+        return self.receiver.clone();
+    }
+
+    pub fn start(&self) {
         let rx = self.rx.clone();
         let sender = self.sender.clone();
         tokio::task::spawn_blocking(move || {
@@ -41,7 +43,6 @@ impl SocketReader {
             loop {
                 match locked_rx.next() {
                     Ok(packet) => {
-                        println!("Got packet of size: {}", packet.len());
                         let _ = locked_sender.send(EthernetPacketVector::new(packet));
                     }
                     Err(e) => {
