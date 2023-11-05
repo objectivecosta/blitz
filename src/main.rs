@@ -4,7 +4,6 @@ use std::sync::Arc;
 use clap::Parser;
 use logger::sqlite_logger::Logger;
 use operating_system::network_tools::NetworkTools;
-use pnet::util::MacAddr;
 
 use crate::{operating_system::network_tools::NetworkToolsImpl, logger::sqlite_logger::SQLiteLogger, socket::socket_manager::SocketManager, packet_inspection::inspector::InspectorImpl};
 
@@ -22,7 +21,7 @@ struct BlitzParameters {
     output_interface: String,
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 8)]
 async fn main() {
     let network_tools = NetworkToolsImpl::new();
     let parameters = BlitzParameters::parse();

@@ -1,13 +1,11 @@
 use std::{cell::RefCell, time::SystemTime};
 
 use chrono::{DateTime, Utc};
-// use sqlite::State;
-use rusqlite::{Connection, Result, Params, params};
-
+use rusqlite::{params, OpenFlags};
 
 pub trait Logger {
     fn log_traffic(
-        &self,
+        &mut self,
         timestamp: i64,
         from_ip: &str,
         from_dns: &str,
@@ -26,7 +24,12 @@ pub struct SQLiteLogger {
 impl SQLiteLogger {
     pub fn new(path: &str) -> Self {
         Self {
-            connection: rusqlite::Connection::open(path).unwrap(),
+            connection: rusqlite::Connection::open_with_flags(
+                path, 
+                OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_CREATE
+                | OpenFlags::SQLITE_OPEN_URI
+            ).unwrap(),
             last_today: RefCell::from("".to_owned()),
         }
     }
@@ -55,13 +58,12 @@ impl SQLiteLogger {
         );
 
         let mut statement = self.connection.prepare(&query).unwrap();
-        // statement.bind((1, self.today_table().as_str())).unwrap();
 
         let mut last_total: i64 = 0;
 
         let today = self.today_table();
 
-        statement.query_row([&today], |row| Ok({
+        let _ = statement.query_row([&today], |row| Ok({
             let value: i64 = row.get(0).unwrap();
             last_total = value;
         }));
@@ -76,7 +78,6 @@ impl SQLiteLogger {
 
         self.connection.execute(&query, []).unwrap();
 
-        // self.connection.execute(query).unwrap();
         let mut bmut = self.last_today.borrow_mut();
         *bmut = self.today_table();
     }
@@ -84,7 +85,7 @@ impl SQLiteLogger {
 
 impl Logger for SQLiteLogger {
     fn log_traffic(
-        &self,
+        &mut self,
         timestamp: i64,
         from_ip: &str,
         from_dns: &str,
@@ -93,6 +94,7 @@ impl Logger for SQLiteLogger {
         packet_size: i64,
         payload_size: i64,
     ) -> bool {
+        // TODO: Queue up multiple logs into one write.
         println!(
             "[log_traffic] {} ({}) -> {} ({}). Sizes: {} ({})",
             from_ip, from_dns, to_ip, to_dns, packet_size, payload_size
@@ -109,17 +111,6 @@ impl Logger for SQLiteLogger {
 
         let mut statement = self.connection.prepare(&query).unwrap();
 
-        // statement.bind((1, timestamp)).unwrap();
-
-        // statement.bind((2, from_ip)).unwrap();
-        // statement.bind((3, from_dns)).unwrap();
-
-        // statement.bind((4, to_ip)).unwrap();
-        // statement.bind((5, to_dns)).unwrap();
-
-        // statement.bind((6, packet_size)).unwrap();
-        // statement.bind((7, payload_size)).unwrap();
-
         let result = statement.execute(params![
           &timestamp,
           from_ip,
@@ -129,8 +120,6 @@ impl Logger for SQLiteLogger {
           &packet_size,
           &payload_size  
         ]);
-
-        // let result: std::result::Result<_, _> = statement.next();
 
         if let Ok(_) = result {
             return true;

@@ -1,6 +1,7 @@
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::Packet;
+use pnet::packet::ipv6::Ipv6Packet;
 use pnet::util::MacAddr;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -48,21 +49,16 @@ impl InspectorImpl {
         let tgt = target.to_string();
 
         if source == self.ignore_source_mac_address || target == self.ignore_target_mac_address {
-            println!("[{}] Ignoring packet src='{}';target='{}'", self.tag, src, tgt);
+            // println!("[{}] Ignoring packet src='{}';target='{}'", self.tag, src, tgt);
             return false;
         }
-
 
         match packet.get_ethertype() {
             EtherTypes::Ipv4 => {
                 self.process_ipv4_packet(packet.packet());
             }
             EtherTypes::Ipv6 => {
-                println!(
-                    "[{}] Received new IPv6 packet; Ethernet properties => src='{}';target='{}'",
-                    self.tag,
-                    src, tgt
-                );
+                self.process_ipv6_packet(packet.packet());
             }
             EtherTypes::Arp => {
                 let packet_type = packet.get_ethertype().to_string();
@@ -119,7 +115,7 @@ impl InspectorImpl {
             let mut get_name_addr = get_name_addr_lock.await;
 
             let logger_lock = logger.lock();
-            let logger = logger_lock.await;
+            let mut logger = logger_lock.await;
 
             let packet: Ipv4Packet = Ipv4Packet::new(&moved_packet).unwrap();
 
@@ -128,6 +124,58 @@ impl InspectorImpl {
 
             let source_dns = get_name_addr.get_from_address(&source).await;
             let destination_dns = get_name_addr.get_from_address(&destination).await;
+
+            logger.log_traffic(
+                timestamp,
+                source.to_string().as_str(),
+                source_dns.as_str(),
+                destination.to_string().as_str(),
+                destination_dns.as_str(),
+                moved_packet.len() as i64,
+                packet.payload().len() as i64,
+            );
+        });
+    }
+
+    fn process_ipv6_packet(&self, packet: &[u8]) {
+        let ethernet_packet = EthernetPacket::new(packet.clone()).unwrap();
+        let ipv6_packet = Ipv6Packet::new(ethernet_packet.payload()).unwrap();
+
+        println!(
+            "[{}] Processing IPv6 packet! src='{}';target='{}';",
+            self.tag,
+            ipv6_packet.get_source().to_string(),
+            ipv6_packet.get_destination().to_string()
+        );
+
+        let moved_packet = ipv6_packet.packet().to_owned();
+
+        let get_name_addr = self.get_name_addr.clone();
+        let logger = self.logger.clone();
+
+        let now = SystemTime::now();
+        let timestamp: i64 = now
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .try_into()
+            .unwrap();
+
+        // Spawn logger process... this can take as much time as possible since it's async.
+        tokio::spawn(async move {
+            let get_name_addr_lock = get_name_addr.lock();
+            let mut get_name_addr = get_name_addr_lock.await;
+
+            let logger_lock = logger.lock();
+            let mut logger = logger_lock.await;
+
+            let packet: Ipv6Packet = Ipv6Packet::new(&moved_packet).unwrap();
+
+            let source = packet.get_source();
+            let destination = packet.get_destination();
+
+            let source_dns = get_name_addr.get_from_address6(&source).await;
+            let destination_dns = get_name_addr.get_from_address6(&destination).await;
 
             logger.log_traffic(
                 timestamp,
