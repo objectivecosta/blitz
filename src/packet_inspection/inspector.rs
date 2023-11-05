@@ -34,7 +34,7 @@ impl InspectorImpl {
 }
 
 impl InspectorImpl {
-    pub fn process_ethernet_packet(&self, packet: &EthernetPacket) {
+    pub fn process_ethernet_packet(&self, packet: &EthernetPacket) -> bool {
         let src = packet.get_source().to_string();
         let tgt = packet.get_destination().to_string();
 
@@ -66,6 +66,9 @@ impl InspectorImpl {
                 );
             }
         }
+
+        // Allow all packets...
+        return true;
     }
 
     fn process_ipv4_packet(&self, packet: &[u8]) {

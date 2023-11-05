@@ -1,7 +1,9 @@
 use std::{cell::RefCell, time::SystemTime};
 
 use chrono::{DateTime, Utc};
-use sqlite::State;
+// use sqlite::State;
+use rusqlite::{Connection, Result, Params, params};
+
 
 pub trait Logger {
     fn log_traffic(
@@ -17,14 +19,14 @@ pub trait Logger {
 }
 
 pub struct SQLiteLogger {
-    connection: sqlite::Connection,
+    connection: rusqlite::Connection,
     last_today: RefCell<String>,
 }
 
 impl SQLiteLogger {
     pub fn new(path: &str) -> Self {
         Self {
-            connection: sqlite::open(path).unwrap(),
+            connection: rusqlite::Connection::open(path).unwrap(),
             last_today: RefCell::from("".to_owned()),
         }
     }
@@ -52,15 +54,17 @@ impl SQLiteLogger {
             "SELECT count(*) as total FROM sqlite_master WHERE type= 'table' AND name = ?;"
         );
 
-        let mut statement = self.connection.prepare(query).unwrap();
-        statement.bind((1, self.today_table().as_str())).unwrap();
+        let mut statement = self.connection.prepare(&query).unwrap();
+        // statement.bind((1, self.today_table().as_str())).unwrap();
 
         let mut last_total: i64 = 0;
 
-        while let Ok(State::Row) = statement.next() {
-            let value = statement.read::<i64, _>("total").unwrap();
+        let today = self.today_table();
+
+        statement.query_row([&today], |row| Ok({
+            let value: i64 = row.get(0).unwrap();
             last_total = value;
-        }
+        }));
 
         return last_total > 0;
     }
@@ -70,7 +74,9 @@ impl SQLiteLogger {
         CREATE TABLE {} (timestamp INTEGER, from_ip TEXT, from_dns TEXT, to_ip TEXT, to_dns TEXT, packet_size INTEGER, payload_size INTEGER);
         ", self.today_table());
 
-        self.connection.execute(query).unwrap();
+        self.connection.execute(&query, []).unwrap();
+
+        // self.connection.execute(query).unwrap();
         let mut bmut = self.last_today.borrow_mut();
         *bmut = self.today_table();
     }
@@ -101,22 +107,32 @@ impl Logger for SQLiteLogger {
             self.today_table()
         );
 
-        let mut statement = self.connection.prepare(query).unwrap();
+        let mut statement = self.connection.prepare(&query).unwrap();
 
-        statement.bind((1, timestamp)).unwrap();
+        // statement.bind((1, timestamp)).unwrap();
 
-        statement.bind((2, from_ip)).unwrap();
-        statement.bind((3, from_dns)).unwrap();
+        // statement.bind((2, from_ip)).unwrap();
+        // statement.bind((3, from_dns)).unwrap();
 
-        statement.bind((4, to_ip)).unwrap();
-        statement.bind((5, to_dns)).unwrap();
+        // statement.bind((4, to_ip)).unwrap();
+        // statement.bind((5, to_dns)).unwrap();
 
-        statement.bind((6, packet_size)).unwrap();
-        statement.bind((7, payload_size)).unwrap();
+        // statement.bind((6, packet_size)).unwrap();
+        // statement.bind((7, payload_size)).unwrap();
 
-        let result = statement.next();
+        let result = statement.execute(params![
+          &timestamp,
+          from_ip,
+          from_dns,
+          to_ip,
+          to_dns,
+          &packet_size,
+          &payload_size  
+        ]);
 
-        if let Ok(State::Done) = result {
+        // let result: std::result::Result<_, _> = statement.next();
+
+        if let Ok(_) = result {
             return true;
         }
 

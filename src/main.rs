@@ -48,15 +48,19 @@ async fn main() {
     let input_inspector = InspectorImpl::new(shared_logger.clone());
     let output_inspector = InspectorImpl::new(shared_logger.clone());
 
+    // Spawns a new copy of the receiver...
     let mut input_to_output_receiver = input_manager.receiver();
+
+    // Spawns a new copy of the receiver...
     let mut output_to_input_receiver = output_manager.receiver();
 
     let input_to_output = tokio::task::spawn(async move {
         loop {
             let _ = input_to_output_receiver.changed().await;
             let packet = (*input_to_output_receiver.borrow()).to_owned();
-            input_inspector.process_ethernet_packet(&packet.to_packet());
-            output_manager.send(&packet).await;
+            if input_inspector.process_ethernet_packet(&packet.to_packet()) {
+                output_manager.send(&packet).await;
+            }
         }
     });
 
@@ -64,8 +68,9 @@ async fn main() {
         loop {
             let _ = output_to_input_receiver.changed().await;
             let packet = (*output_to_input_receiver.borrow()).to_owned();
-            output_inspector.process_ethernet_packet(&packet.to_packet());
-            input_manager.send(&packet).await;
+            if output_inspector.process_ethernet_packet(&packet.to_packet()) {
+                input_manager.send(&packet).await;
+            }
         }
     });
 
