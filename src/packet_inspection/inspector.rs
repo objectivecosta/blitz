@@ -1,6 +1,7 @@
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::Packet;
+use pnet::util::MacAddr;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -18,15 +19,21 @@ use super::get_name_addr::{GetNameAddr, GetNameAddrImpl};
 // }
 
 pub struct InspectorImpl {
+    tag: &'static str, 
     get_name_addr: Arc<tokio::sync::Mutex<dyn GetNameAddr + Send>>,
     logger: Arc<tokio::sync::Mutex<Box<dyn Logger + Send>>>,
+    ignore_source_mac_address: MacAddr,
+    ignore_target_mac_address: MacAddr,
 }
 
 impl InspectorImpl {
-    pub fn new(logger: Arc<tokio::sync::Mutex<Box<dyn Logger + Send>>>) -> Self {
+    pub fn new(tag: &'static str, logger: Arc<tokio::sync::Mutex<Box<dyn Logger + Send>>>, ignore_source_mac_address: MacAddr, ignore_target_mac_address: MacAddr) -> Self {
         let result: InspectorImpl = Self {
+            tag,
             get_name_addr: Arc::from(tokio::sync::Mutex::new(GetNameAddrImpl::new())),
-            logger: logger,
+            logger,
+            ignore_source_mac_address,
+            ignore_target_mac_address,
         };
 
         return result;
@@ -35,8 +42,16 @@ impl InspectorImpl {
 
 impl InspectorImpl {
     pub fn process_ethernet_packet(&self, packet: &EthernetPacket) -> bool {
-        let src = packet.get_source().to_string();
-        let tgt = packet.get_destination().to_string();
+        let source = packet.get_source();
+        let target = packet.get_destination();
+        let src = source.to_string();
+        let tgt = target.to_string();
+
+        if source == self.ignore_source_mac_address || target == self.ignore_target_mac_address {
+            println!("[{}] Ignoring packet src='{}';target='{}'", self.tag, src, tgt);
+            return false;
+        }
+
 
         match packet.get_ethertype() {
             EtherTypes::Ipv4 => {
@@ -44,21 +59,24 @@ impl InspectorImpl {
             }
             EtherTypes::Ipv6 => {
                 println!(
-                    "Received new IPv6 packet; Ethernet properties => src='{}';target='{}'",
+                    "[{}] Received new IPv6 packet; Ethernet properties => src='{}';target='{}'",
+                    self.tag,
                     src, tgt
                 );
             }
             EtherTypes::Arp => {
                 let packet_type = packet.get_ethertype().to_string();
                 println!(
-                    "Received new Arp packet src='{}';target='{}';type='{}'",
+                    "[{}] Received new Arp packet src='{}';target='{}';type='{}'",
+                    self.tag,
                     src, tgt, packet_type
                 );
             }
             default => {
                 let packet_type = packet.get_ethertype().to_string();
                 println!(
-                    "Received new Ethernet ({}) packet src='{}';target='{}';type='{}'",
+                    "[{}] Received new Ethernet ({}) packet src='{}';target='{}';type='{}'",
+                    self.tag,
                     default.to_string(),
                     src,
                     tgt,
@@ -76,7 +94,8 @@ impl InspectorImpl {
         let ipv4_packet = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
 
         println!(
-            "Processing IPv4 packet! src='{}';target='{}';",
+            "[{}] Processing IPv4 packet! src='{}';target='{}';",
+            self.tag,
             ipv4_packet.get_source().to_string(),
             ipv4_packet.get_destination().to_string()
         );

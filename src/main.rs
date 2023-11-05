@@ -4,6 +4,7 @@ use std::sync::Arc;
 use clap::Parser;
 use logger::sqlite_logger::Logger;
 use operating_system::network_tools::NetworkTools;
+use pnet::util::MacAddr;
 
 use crate::{operating_system::network_tools::NetworkToolsImpl, logger::sqlite_logger::SQLiteLogger, socket::socket_manager::SocketManager, packet_inspection::inspector::InspectorImpl};
 
@@ -26,13 +27,13 @@ async fn main() {
     let network_tools = NetworkToolsImpl::new();
     let parameters = BlitzParameters::parse();
     let input_interface_name = parameters.input_interface.as_str();
-    let output_interface_name = parameters.input_interface.as_str();
+    let output_interface_name = parameters.output_interface.as_str();
     
     let input_interface = network_tools.fetch_interface(input_interface_name);
-    let _input_hw_address = network_tools.fetch_hardware_address(input_interface_name).unwrap();
+    let input_hw_address = network_tools.fetch_hardware_address(input_interface_name).unwrap();
     
     let output_interface = network_tools.fetch_interface(output_interface_name);
-    let _output_hw_address = network_tools.fetch_hardware_address(output_interface_name).unwrap();
+    let output_hw_address = network_tools.fetch_hardware_address(output_interface_name).unwrap();
 
     let path = format!("./db.sqlite");
     let logger = SQLiteLogger::new(path.as_str());
@@ -45,8 +46,8 @@ async fn main() {
     let logger: Box<dyn Logger + Send> = Box::from(logger);
     let shared_logger = Arc::from(tokio::sync::Mutex::new(logger));
 
-    let input_inspector = InspectorImpl::new(shared_logger.clone());
-    let output_inspector = InspectorImpl::new(shared_logger.clone());
+    let input_inspector = InspectorImpl::new("inbound", shared_logger.clone(), input_hw_address, input_hw_address);
+    let output_inspector = InspectorImpl::new("outbound", shared_logger.clone(), output_hw_address, output_hw_address);
 
     // Spawns a new copy of the receiver...
     let mut input_to_output_receiver = input_manager.receiver();
