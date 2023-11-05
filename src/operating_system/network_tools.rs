@@ -1,5 +1,5 @@
-use std::{process::Command, net::Ipv4Addr, str::FromStr};
-use pnet::{util::MacAddr, datalink::NetworkInterface};
+use pnet::{datalink::NetworkInterface, util::MacAddr};
+use std::{net::Ipv4Addr, process::Command, str::FromStr};
 
 pub trait NetworkTools {
     fn debug_iterate(&self);
@@ -40,9 +40,9 @@ impl NetworkTools for NetworkToolsImpl {
 
                     // Contains hw address
                     if address.as_sockaddr_in().is_some() {
-                      return Some(
-                        std::net::Ipv4Addr::from(address.as_sockaddr_in().unwrap().ip().to_be_bytes())
-                      );
+                        return Some(std::net::Ipv4Addr::from(
+                            address.as_sockaddr_in().unwrap().ip().to_be_bytes(),
+                        ));
                     }
                 }
             }
@@ -71,7 +71,7 @@ impl NetworkTools for NetworkToolsImpl {
 
         return None;
     }
-    
+
     fn fetch_hardware_address(&self, interface_name: &str) -> Option<MacAddr> {
         let addrs = nix::ifaddrs::getifaddrs().unwrap();
         for ifaddr in addrs {
@@ -83,17 +83,17 @@ impl NetworkTools for NetworkToolsImpl {
 
                     // Contains hw address
                     if address.as_link_addr().is_some() {
-                      let link_addr = address.as_link_addr();
+                        let link_addr = address.as_link_addr();
 
-                      // TODO: (@objectivecosta) remove unwraps!
-                      let mac_addr = MacAddr::from(link_addr.unwrap().addr().unwrap());
-                      return Some(mac_addr);
+                        // TODO: (@objectivecosta) remove unwraps!
+                        let mac_addr = MacAddr::from(link_addr.unwrap().addr().unwrap());
+                        return Some(mac_addr);
                     }
                 }
             }
         }
 
-        return None
+        return None;
     }
 
     fn debug_iterate(&self) {
@@ -117,15 +117,15 @@ impl NetworkTools for NetworkToolsImpl {
     fn fetch_gateway_ip(&self) -> Ipv4Addr {
         let macos = "route -n get default | grep 'gateway' | awk '{print $2}'";
         let output = Command::new("sh")
-        .arg("-c")
-        .arg(macos)
-        .output()
-        .expect("failed to execute process");
-        
+            .arg("-c")
+            .arg(macos)
+            .output()
+            .expect("failed to execute process");
+
         let hello = output.stdout;
         let as_str = String::from_utf8(hello).unwrap();
         let target_len = as_str.trim();
-        
+
         let ipv4 = Ipv4Addr::from_str(target_len);
 
         return ipv4.unwrap();
