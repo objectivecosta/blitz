@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
 use pnet::datalink::NetworkInterface;
-use tokio::sync::watch;
+use tokio::sync::{watch, mpsc};
 
 use super::{
     datalink_provider::DataLinkProvider, ethernet_packet_vector::EthernetPacketVector,
@@ -12,10 +14,13 @@ pub struct SocketManager {
 }
 
 impl SocketManager {
-    pub fn new(network_interface: &NetworkInterface) -> Self {
+    pub fn new(
+        network_interface: &NetworkInterface,
+        sender: mpsc::Sender<Arc<[u8]>>,
+    ) -> Self {
         let (ethernet_tx, ethernet_rx) = (DataLinkProvider {}).provide(network_interface);
         let socket_manager = SocketManager {
-            reader: SocketReader::new(ethernet_rx),
+            reader: SocketReader::new(ethernet_rx, sender),
             writer: SocketWriter::new(ethernet_tx),
         };
 
@@ -24,15 +29,7 @@ impl SocketManager {
         return socket_manager;
     }
 
-    pub async fn recv(&self) -> EthernetPacketVector {
-        return self.reader.recv().await;
-    }
-
-    pub fn receiver(&self) -> watch::Receiver<EthernetPacketVector> {
-        return self.reader.receiver();
-    }
-
-    pub async fn send(&self, packet: &EthernetPacketVector) -> bool {
+    pub async fn send(&self, packet: Arc<[u8]>) -> bool {
         return self.writer.send(packet).await;
     }
 }

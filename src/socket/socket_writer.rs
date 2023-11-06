@@ -1,8 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use pnet::datalink::DataLinkSender;
+use pnet::{datalink::DataLinkSender, packet::ethernet::{EthernetPacket, MutableEthernetPacket}};
 
-use super::ethernet_packet_vector::EthernetPacketVector;
 
 pub struct SocketWriter {
     tx: Arc<Mutex<Box<dyn DataLinkSender>>>,
@@ -17,13 +16,13 @@ impl SocketWriter {
         return writer;
     }
 
-    pub async fn send(&self, packet: &EthernetPacketVector) -> bool {
-        let packet = packet.copy();
-        let size = packet.size();
+    pub async fn send(&self, packet: Arc<[u8]>) -> bool {
+        let packet = packet.clone();
+        let size = packet.len();
         let tx = self.tx.clone();
         let task = tokio::task::spawn_blocking(move || {
             let mut locked = tx.lock().unwrap();
-            let result = locked.send_to(packet.to_slice(), None).unwrap();
+            let result = locked.send_to(packet.as_ref(), None).unwrap();
             return result;
         });
 

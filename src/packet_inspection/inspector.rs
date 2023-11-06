@@ -42,23 +42,25 @@ impl InspectorImpl {
 }
 
 impl InspectorImpl {
-    pub fn process_ethernet_packet(&self, packet: &EthernetPacket) -> bool {
+    pub fn process_ethernet_packet(&self, packet: Arc<[u8]>) -> bool {
+        let packet = EthernetPacket::new(packet.as_ref()).unwrap();
         let source = packet.get_source();
         let target = packet.get_destination();
         let src = source.to_string();
         let tgt = target.to_string();
 
-        if source == self.ignore_source_mac_address || target == self.ignore_target_mac_address {
+        if source == self.ignore_source_mac_address || source == self.ignore_target_mac_address || 
+           target == self.ignore_target_mac_address || target == self.ignore_source_mac_address {
             // println!("[{}] Ignoring packet src='{}';target='{}'", self.tag, src, tgt);
             return false;
         }
 
         match packet.get_ethertype() {
             EtherTypes::Ipv4 => {
-                self.process_ipv4_packet(packet.packet());
+                self.process_ipv4_packet(&packet);
             }
             EtherTypes::Ipv6 => {
-                self.process_ipv6_packet(packet.packet());
+                self.process_ipv6_packet(&packet);
             }
             EtherTypes::Arp => {
                 let packet_type = packet.get_ethertype().to_string();
@@ -85,9 +87,9 @@ impl InspectorImpl {
         return true;
     }
 
-    fn process_ipv4_packet(&self, packet: &[u8]) {
-        let ethernet_packet = EthernetPacket::new(packet.clone()).unwrap();
-        let ipv4_packet = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
+    fn process_ipv4_packet(&self, packet: &EthernetPacket) {
+        // let ethernet_packet = EthernetPacket::new(packet.clone()).unwrap();
+        let ipv4_packet = Ipv4Packet::new(packet.payload()).unwrap();
 
         println!(
             "[{}] Processing IPv4 packet! src='{}';target='{}';",
@@ -108,6 +110,8 @@ impl InspectorImpl {
             .as_secs()
             .try_into()
             .unwrap();
+
+        return;
 
         // Spawn logger process... this can take as much time as possible since it's async.
         tokio::spawn(async move {
@@ -137,9 +141,11 @@ impl InspectorImpl {
         });
     }
 
-    fn process_ipv6_packet(&self, packet: &[u8]) {
-        let ethernet_packet = EthernetPacket::new(packet.clone()).unwrap();
-        let ipv6_packet = Ipv6Packet::new(ethernet_packet.payload()).unwrap();
+    fn process_ipv6_packet(&self, packet: &EthernetPacket) {
+        // let ethernet_packet = EthernetPacket::new(packet.clone()).unwrap();
+        // let ipv6_packet = Ipv6Packet::new(ethernet_packet.payload()).unwrap();
+
+        let ipv6_packet = Ipv6Packet::new(packet.payload()).unwrap();
 
         println!(
             "[{}] Processing IPv6 packet! src='{}';target='{}';",
@@ -161,6 +167,7 @@ impl InspectorImpl {
             .try_into()
             .unwrap();
 
+        return;
         // Spawn logger process... this can take as much time as possible since it's async.
         tokio::spawn(async move {
             let get_name_addr_lock = get_name_addr.lock();

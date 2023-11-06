@@ -21,7 +21,7 @@ struct BlitzParameters {
     output_interface: String,
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 8)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     let network_tools = NetworkToolsImpl::new();
     let parameters = BlitzParameters::parse();
@@ -39,37 +39,36 @@ async fn main() {
 
     logger.setup_table();
 
-    let input_manager: SocketManager = SocketManager::new(&input_interface);
-    let output_manager: SocketManager = SocketManager::new(&output_interface);
+    let input_channel = tokio::sync::mpsc::channel::<Arc<[u8]>>(64);
+    let input_manager: SocketManager = SocketManager::new(&input_interface, input_channel.0);
+
+    let output_channel = tokio::sync::mpsc::channel::<Arc<[u8]>>(64);
+    let output_manager: SocketManager = SocketManager::new(&output_interface, output_channel.0);
 
     let logger: Box<dyn Logger + Send> = Box::from(logger);
     let shared_logger = Arc::from(tokio::sync::Mutex::new(logger));
 
-    let input_inspector = InspectorImpl::new("inbound", shared_logger.clone(), input_hw_address, input_hw_address);
-    let output_inspector = InspectorImpl::new("outbound", shared_logger.clone(), output_hw_address, output_hw_address);
+    let input_inspector = InspectorImpl::new("inbound", shared_logger.clone(), output_hw_address, input_hw_address);
+    let output_inspector = InspectorImpl::new("outbound", shared_logger.clone(), input_hw_address, output_hw_address);
 
-    // Spawns a new copy of the receiver...
-    let mut input_to_output_receiver = input_manager.receiver();
-
-    // Spawns a new copy of the receiver...
-    let mut output_to_input_receiver = output_manager.receiver();
+    let mut input_to_output_receiver = input_channel.1;
+    let mut output_to_input_receiver = output_channel.1;
 
     let input_to_output = tokio::task::spawn(async move {
         loop {
-            let _ = input_to_output_receiver.changed().await;
-            let packet = (*input_to_output_receiver.borrow()).to_owned();
-            if input_inspector.process_ethernet_packet(&packet.to_packet()) {
-                output_manager.send(&packet).await;
+            let packet = input_to_output_receiver.recv().await.unwrap();
+
+            if input_inspector.process_ethernet_packet(packet.clone()) {
+                output_manager.send(packet).await;
             }
         }
     });
 
     let output_to_input = tokio::task::spawn(async move {
         loop {
-            let _ = output_to_input_receiver.changed().await;
-            let packet = (*output_to_input_receiver.borrow()).to_owned();
-            if output_inspector.process_ethernet_packet(&packet.to_packet()) {
-                input_manager.send(&packet).await;
+            let packet = output_to_input_receiver.recv().await.unwrap();
+            if output_inspector.process_ethernet_packet(packet.clone()) {
+                input_manager.send(packet).await;
             }
         }
     });

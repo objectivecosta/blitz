@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
 
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 ENV PATH="$PATH:/root/.cargo/bin"
+RUN rustup target add armv7-unknown-linux-gnueabihf
 
 # Execute command
 USER root

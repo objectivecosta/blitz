@@ -1,36 +1,24 @@
 use std::sync::{Arc, Mutex};
 
 use pnet::datalink::DataLinkReceiver;
-use tokio::sync::watch;
+use tokio::sync::{watch, mpsc};
 
 use super::ethernet_packet_vector::EthernetPacketVector;
 
 pub struct SocketReader {
     rx: Arc<Mutex<Box<dyn DataLinkReceiver>>>,
-    sender: Arc<Mutex<watch::Sender<EthernetPacketVector>>>,
-    receiver: watch::Receiver<EthernetPacketVector>,
+    sender: mpsc::Sender<Arc<[u8]>>,
+    // receiver: mpsc::Receiver<EthernetPacketVector>,
 }
 
 impl SocketReader {
-    pub fn new(rx: Box<dyn DataLinkReceiver>) -> Self {
-        let channel = tokio::sync::watch::channel(EthernetPacketVector::new(vec![].as_slice()));
+    pub fn new(rx: Box<dyn DataLinkReceiver>, sender: mpsc::Sender<Arc<[u8]>>) -> Self {
         let reader: SocketReader = SocketReader {
             rx: Arc::from(Mutex::new(rx)),
-            sender: Arc::from(Mutex::new(channel.0)),
-            receiver: channel.1,
+            sender,
         };
 
         return reader;
-    }
-
-    pub async fn recv(&self) -> EthernetPacketVector {
-        let mut clone = self.receiver.clone();
-        let _ = clone.changed().await;
-        return (*clone.borrow()).copy();
-    }
-
-    pub fn receiver(&self) -> watch::Receiver<EthernetPacketVector> {
-        return self.receiver.clone();
     }
 
     pub fn start(&self) {
@@ -38,12 +26,12 @@ impl SocketReader {
         let sender = self.sender.clone();
         tokio::task::spawn_blocking(move || {
             let mut locked_rx = rx.lock().unwrap();
-            let locked_sender = sender.lock().unwrap();
+            // let locked_sender = sender.lock().unwrap();
 
             loop {
                 match locked_rx.next() {
                     Ok(packet) => {
-                        let _ = locked_sender.send(EthernetPacketVector::new(packet));
+                        let _ = sender.blocking_send(packet.into());
                     }
                     Err(e) => {
                         // If an error occurs, we can handle it here
