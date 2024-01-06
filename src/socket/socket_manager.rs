@@ -4,7 +4,7 @@ use pnet::datalink::NetworkInterface;
 use tokio::sync::{watch, mpsc};
 
 use super::{
-    datalink_provider::DataLinkProvider, ethernet_packet_vector::EthernetPacketVector,
+    datalink_provider::DataLinkProvider,
     socket_reader::SocketReader, socket_writer::SocketWriter,
 };
 
@@ -18,7 +18,7 @@ impl SocketManager {
         network_interface: &NetworkInterface,
         sender: mpsc::Sender<Arc<[u8]>>,
     ) -> Self {
-        let (ethernet_tx, ethernet_rx) = (DataLinkProvider {}).provide(network_interface);
+        let (ethernet_tx, ethernet_rx) = (DataLinkProvider::new()).provide(network_interface);
         let socket_manager = SocketManager {
             reader: SocketReader::new(ethernet_rx, sender),
             writer: SocketWriter::new(ethernet_tx),
