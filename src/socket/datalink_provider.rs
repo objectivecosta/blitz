@@ -21,8 +21,6 @@ impl DataLinkProvider {
         &self,
         network_interface: &NetworkInterface,
     ) -> (Box<dyn DataLinkSender>, Box<dyn DataLinkReceiver>) {
-        let config: Config = Default::default();
-
         let config = Config {
             write_buffer_size: 4096 * 2,
             read_buffer_size: 4096 * 2,
